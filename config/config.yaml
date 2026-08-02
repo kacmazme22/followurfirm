@@ -1,0 +1,109 @@
+# =============================================================================
+# FollowUrFirm — config.yaml
+#
+# This file holds everything a non-developer should be able to tweak without
+# touching Python: which tickers to track, who receives the digest, and which
+# data sources are active per market phase.
+#
+# Secrets (API keys, SMTP password, etc.) do NOT belong here — they live in
+# environment variables / .env, loaded by config/settings.py.
+# =============================================================================
+
+market_phase: bist  # bist | global | both
+
+tickers:
+  bist:
+    - symbol: THYAO
+      name: "Türk Hava Yolları"
+      enabled: true
+    - symbol: EREGL
+      name: "Ereğli Demir Çelik"
+      enabled: true
+    - symbol: GARAN
+      name: "Garanti BBVA"
+      enabled: true
+    - symbol: ASTOR
+      name: "Astor Enerji"
+      enabled: true
+  global: []  # Phase 2 — e.g. AAPL, NVDA, TSLA, PLTR
+
+recipients:
+  - "you@example.com"
+
+schedule:
+  cron_utc: "0 5 * * *"   # 08:00 Europe/Istanbul (UTC+3), adjust for DST manually if needed
+  timezone_display: "Europe/Istanbul"
+
+sources:
+  kap:
+    enabled: true
+    base_url: "https://www.kap.org.tr"
+    # Undocumented endpoint — verified working as of project inception;
+    # expect this to break silently and need periodic re-verification.
+    disclosure_endpoint: "/tr/bist-sirketleri"
+    max_items_per_ticker: 10
+    politeness:
+      min_delay_seconds: 2.0
+      max_delay_seconds: 5.0
+      user_agent: "Mozilla/5.0 (compatible; FollowUrFirmBot/1.0; +https://github.com/your-org/followurfirm)"
+
+  bigpara:
+    enabled: true
+    base_url: "https://www.bigpara.com"
+    politeness:
+      min_delay_seconds: 1.5
+      max_delay_seconds: 4.0
+
+  google_news_rss:
+    enabled: true
+    # {ticker} and {company_name} are substituted at request time.
+    query_template_tr: "{company_name} {ticker} hisse"
+    language: "tr"
+    country: "TR"
+
+  company_ir_pages:
+    enabled: false  # opt-in per ticker once IR page URLs are curated
+    urls: {}
+
+  web_search_fallback:
+    enabled: true
+    trigger_if_items_below: 2   # if a ticker yields < N items from primary sources
+
+  # --- Phase 2 (disabled by default) ---
+  sec_edgar:
+    enabled: false
+    base_url: "https://www.sec.gov"
+  yahoo_finance:
+    enabled: false
+  finviz:
+    enabled: false
+  pr_newswire:
+    enabled: false
+
+ai_synthesis:
+  # Tier 1 (always on): rule-based keyword/regex categorization, zero LLM calls.
+  rule_based_categorization: true
+
+  # Tier 2 (conditional): only invoked when rule-based pass can't confidently
+  # categorize, or when genuine free-text summarization/dedup judgment is
+  # needed. Provider is selected via AI_PROVIDER env var — this YAML only
+  # controls whether Tier 2 is allowed to run at all.
+  llm_synthesis_enabled: true
+  llm_trigger:
+    # Only call the LLM for a ticker if it has at least this many raw items
+    # AND rule-based categorization left at least one item unclassified.
+    min_items_to_justify_call: 3
+
+email:
+  subject_template: "FollowUrFirm Günlük Bülten — {date}"
+  from_display_name: "FollowUrFirm Digest"
+  # SMTP host/port/credentials come from env vars (see .env.example)
+
+cache:
+  # In-run cache only (not persisted across runs) — avoids redundant hits on
+  # the same URL within a single pipeline execution.
+  enabled: true
+
+logging:
+  level: "INFO"
+  json_format: false
