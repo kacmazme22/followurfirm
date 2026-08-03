@@ -96,19 +96,29 @@ class BaseScraper(ABC):
         """GET with politeness (delay + User-Agent) and in-run caching.
         A repeated request to the same URL within a run returns the cached
         response instead of hitting the network again."""
-        if url in self._cache:
-            return self._cache[url]
+        return await self._request("GET", url, cache_key=url, **kwargs)
+
+    async def _post(self, url: str, *, json: dict | None = None, **kwargs) -> httpx.Response:
+        """POST with politeness (delay + User-Agent) and in-run caching. The
+        cache key includes the JSON body since, unlike GET, the same URL can
+        carry different requests depending on payload."""
+        cache_key = f"POST:{url}:{json}"
+        return await self._request("POST", url, cache_key=cache_key, json=json, **kwargs)
+
+    async def _request(self, method: str, url: str, *, cache_key: str, **kwargs) -> httpx.Response:
+        if cache_key in self._cache:
+            return self._cache[cache_key]
 
         if self._client is None:
-            raise RuntimeError("_get() called outside of run() — no HTTP client set up.")
+            raise RuntimeError("_request() called outside of run() — no HTTP client set up.")
 
         await self._sleep_politely()
 
         headers = kwargs.pop("headers", {}) or {}
         headers.setdefault("User-Agent", self.politeness.user_agent)
 
-        response = await self._client.get(url, headers=headers, **kwargs)
-        self._cache[url] = response
+        response = await self._client.request(method, url, headers=headers, **kwargs)
+        self._cache[cache_key] = response
         return response
 
     async def _sleep_politely(self) -> None:

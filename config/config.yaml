@@ -38,9 +38,12 @@ sources:
   kap:
     enabled: true
     base_url: "https://www.kap.org.tr"
-    # Undocumented endpoint — verified working as of project inception;
-    # expect this to break silently and need periodic re-verification.
-    disclosure_endpoint: "/tr/bist-sirketleri"
+    # Undocumented JSON API (KAP is a Next.js SPA with no server-rendered
+    # HTML to scrape) — verified working via a live POST as of 2026-08-03.
+    # Requires header Referer: https://www.kap.org.tr/tr/bildirim-sorgu
+    # (set in scrapers/kap_scraper.py). Expect this to break silently and
+    # need periodic re-verification.
+    disclosure_endpoint: "/tr/api/disclosure/members/byCriteria"
     max_items_per_ticker: 10
     politeness:
       min_delay_seconds: 2.0
