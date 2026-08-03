@@ -116,6 +116,7 @@ class BaseScraper(ABC):
 
         headers = kwargs.pop("headers", {}) or {}
         headers.setdefault("User-Agent", self.politeness.user_agent)
+        kwargs.setdefault("follow_redirects", True)
 
         response = await self._client.request(method, url, headers=headers, **kwargs)
         self._cache[cache_key] = response
