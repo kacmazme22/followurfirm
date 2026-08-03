@@ -1,0 +1,125 @@
+{#
+  Master email layout (KapMail-style). Rendered with:
+      Environment(...).get_template("email_base.html").render(
+          digest_run=digest_run, colors=styles.template_colors()
+      )
+  Table-based layout with per-element inline styles — no <style> block, no
+  external stylesheet. This is deliberate: most email clients (Outlook
+  desktop especially) strip or ignore <style> blocks and external CSS, so
+  every rule that matters has to live in a `style="..."` attribute.
+#}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F8FAFC; font-family:{{ colors.FONT_STACK }};">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px; width:100%; background-color:#FFFFFF; border:1px solid {{ colors.BORDER_GREY }}; border-radius:8px; overflow:hidden;">
+
+        {# ---------------- Header ---------------- #}
+        <tr>
+          <td style="padding:24px 28px; border-bottom:1px solid {{ colors.BORDER_GREY }};">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="font-size:20px; font-weight:700; color:{{ colors.PRIMARY_DARK }};">
+                  FollowUrFirm Digest
+                </td>
+              </tr>
+              <tr>
+                <td style="padding-top:4px; font-size:13px; color:{{ colors.TEXT_GREY }};">
+                  {{ digest_run.run_date.strftime('%d.%m.%Y %H:%M') }}
+                </td>
+              </tr>
+              <tr>
+                <td style="padding-top:12px;">
+                  {% for report in digest_run.company_reports %}
+                  <span style="display:inline-block; margin:0 6px 6px 0; padding:4px 10px; border-radius:999px; background-color:#F1F5F9; color:{{ colors.PRIMARY_DARK }}; font-size:12px; font-weight:600;">{{ report.ticker }}</span>
+                  {% endfor %}
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        {# ---------------- Body ---------------- #}
+        {% if not digest_run.has_any_content %}
+        <tr>
+          <td style="padding:40px 28px; text-align:center; color:{{ colors.TEXT_GREY }}; font-size:14px;">
+            Bugün takip ettiğin şirketler için yeni bir gelişme yok. Yarın tekrar bakacağız.
+          </td>
+        </tr>
+        {% else %}
+          {% for report in digest_run.company_reports %}
+          <tr>
+            <td style="padding:24px 28px; {% if not loop.last %}border-bottom:1px solid {{ colors.BORDER_GREY }};{% endif %}">
+
+              <div style="font-size:16px; font-weight:700; color:{{ colors.PRIMARY_DARK }}; margin-bottom:{{ '4px' if report.is_empty() else '14px' }};">
+                {{ report.ticker }} — {{ report.company_name }}
+              </div>
+
+              {% if report.is_empty() %}
+              <div style="font-size:13px; color:{{ colors.TEXT_GREY }};">
+                Bugün {{ report.ticker }} için yeni bir gelişme yok.
+              </div>
+              {% else %}
+                {% for category, items in report.ordered_categories() %}
+                {% set badge = colors.CATEGORY_BADGES[category.value] %}
+                <div style="margin-bottom:16px;">
+                  <span style="display:inline-block; padding:3px 9px; border-radius:4px; background-color:{{ badge.bg }}; color:{{ badge.text }}; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.02em; margin-bottom:8px;">
+                    {{ category.display_name_tr }}
+                  </span>
+
+                  {% for item in items %}
+                  <div style="margin-top:10px; padding-top:10px; {% if not loop.first %}border-top:1px solid {{ colors.BORDER_GREY }};{% endif %}">
+                    <div style="font-size:14px; font-weight:600; color:{{ colors.PRIMARY_DARK }};">
+                      {{ item.title }}
+                    </div>
+                    {% if item.body_snippet %}
+                    <div style="margin-top:4px; font-size:13px; color:{{ colors.TEXT_GREY }}; line-height:1.4; max-height:2.8em; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">
+                      {{ item.body_snippet }}
+                    </div>
+                    {% endif %}
+                    {% if item.url or item.related_kap_url %}
+                    <div style="margin-top:6px; font-size:12px;">
+                      {% if item.url %}
+                      <a href="{{ item.url }}" style="color:{{ badge.text }}; text-decoration:none; font-weight:600;">Kaynak &rarr;</a>
+                      {% endif %}
+                      {% if item.url and item.related_kap_url %}
+                      <span style="color:{{ colors.BORDER_GREY }}; margin:0 6px;">&middot;</span>
+                      {% endif %}
+                      {% if item.related_kap_url %}
+                      <a href="{{ item.related_kap_url }}" style="color:{{ colors.BADGE_KAP.text }}; text-decoration:none; font-weight:600;">KAP &rarr;</a>
+                      {% endif %}
+                    </div>
+                    {% endif %}
+                  </div>
+                  {% endfor %}
+                </div>
+                {% endfor %}
+              {% endif %}
+
+            </td>
+          </tr>
+          {% endfor %}
+        {% endif %}
+
+        {# ---------------- Footer ---------------- #}
+        <tr>
+          <td style="padding:20px 28px; background-color:#F8FAFC; border-top:1px solid {{ colors.BORDER_GREY }};">
+            {% if digest_run.errors %}
+            <div style="font-size:12px; color:{{ colors.TEXT_GREY }}; margin-bottom:10px;">
+              Bugün şu kaynaklardan bazıları geçici olarak çekilemedi, bülten kalanıyla devam etti:
+              <ul style="margin:6px 0 0; padding-left:18px;">
+                {% for error in digest_run.errors %}
+                <li style="margin-bottom:2px;">{{ error }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+            <div style="font-size:11px; color:{{ colors.TEXT_GREY }};">
+              FollowUrFirm &middot; {{ digest_run.run_date.strftime('%d.%m.%Y %H:%M') }} itibarıyla oluşturuldu.
+            </div>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
