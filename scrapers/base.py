@@ -22,6 +22,7 @@ import asyncio
 import logging
 import random
 from abc import ABC, abstractmethod
+from contextlib import asynccontextmanager
 
 import httpx
 from pydantic import BaseModel, Field
@@ -72,11 +73,9 @@ class BaseScraper(ABC):
         """Runs `fetch_raw()`, never raises. Any exception is caught, logged
         at ERROR level, and turned into a `ScraperResult(error=...)` so a
         broken source degrades the digest instead of stopping the pipeline."""
-        owns_client = self._client is None
-        if owns_client:
-            self._client = httpx.AsyncClient()
         try:
-            items = await self.fetch_raw()
+            async with self._client_session():
+                items = await self.fetch_raw()
             return ScraperResult(items=items)
         except Exception as exc:  # intentional: never propagate past run()
             logger.error(
@@ -87,6 +86,19 @@ class BaseScraper(ABC):
                 exc_info=True,
             )
             return ScraperResult(error=str(exc))
+
+    @asynccontextmanager
+    async def _client_session(self):
+        """Ensures self._client is usable for the duration of the block,
+        opening (and later closing) one only if none was injected. Shared by
+        `run()` and by any subclass method that needs the same lifecycle
+        outside of `fetch_raw()` (e.g. KapScraper.fetch_all_raw(), which
+        bypasses run() to do one bulk request instead of one per ticker)."""
+        owns_client = self._client is None
+        if owns_client:
+            self._client = httpx.AsyncClient()
+        try:
+            yield
         finally:
             if owns_client and self._client is not None:
                 await self._client.aclose()

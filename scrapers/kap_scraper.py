@@ -16,6 +16,16 @@ Field mapping decisions:
     here — what each code means isn't fully mapped yet. Everything passes
     through; add an exclude list to config/constants.py later if some
     classes turn out to be noise.
+
+Two ways to use this scraper:
+  - `fetch_raw()` / `run()`: the normal BaseScraper contract, one HTTP
+    request for `self.ticker` only.
+  - `fetch_all_raw(tickers)`: bypasses per-ticker filtering entirely and
+    makes exactly ONE request covering every company (mkkMemberOidList=[]),
+    then groups client-side by `stockCodes`. main.py uses this instead of
+    instantiating one KapScraper per ticker, since N per-ticker instances
+    would otherwise each make the identical POST — BaseScraper's in-run
+    cache is per-instance, so it can't dedupe the request across them.
 """
 
 from __future__ import annotations
@@ -39,8 +49,7 @@ LOOKBACK_DAYS = 2
 
 
 class KapScraper(BaseScraper):
-    """Fetches recent disclosures from KAP's byCriteria JSON API and filters
-    them down to this scraper's ticker."""
+    """Fetches recent disclosures from KAP's byCriteria JSON API."""
 
     def __init__(
         self,
@@ -52,6 +61,21 @@ class KapScraper(BaseScraper):
         self.source_config = source_config
 
     async def fetch_raw(self) -> list[RawScrapedItem]:
+        disclosures = await self._fetch_disclosures_json()
+        return self._items_for_ticker(disclosures, self.ticker.symbol)
+
+    async def fetch_all_raw(self, tickers: list[TickerConfig]) -> dict[str, list[RawScrapedItem]]:
+        """Single POST covering every company, grouped client-side into a
+        dict keyed by ticker symbol. Unlike fetch_raw()/run(), this ignores
+        `self.ticker` entirely (it's only a label on this instance, e.g. for
+        logging elsewhere) and is NOT wrapped in BaseScraper.run()'s
+        try/except — callers should wrap this call themselves, the same way
+        fetch_raw() is unprotected until run() wraps it."""
+        async with self._client_session():
+            disclosures = await self._fetch_disclosures_json()
+        return {ticker.symbol: self._items_for_ticker(disclosures, ticker.symbol) for ticker in tickers}
+
+    async def _fetch_disclosures_json(self) -> list[dict]:
         today = date.today()
         from_date = today - timedelta(days=LOOKBACK_DAYS)
 
@@ -64,17 +88,18 @@ class KapScraper(BaseScraper):
         }
 
         response = await self._post(url, json=body, headers={"Referer": DISCLOSURE_REFERER})
-        disclosures = response.json()
+        return response.json()
 
+    def _items_for_ticker(self, disclosures: list[dict], ticker_symbol: str) -> list[RawScrapedItem]:
         items: list[RawScrapedItem] = []
         for disclosure in disclosures:
-            if self.ticker.symbol not in self._ticker_codes(disclosure):
+            if ticker_symbol not in self._ticker_codes(disclosure):
                 continue
 
             items.append(
                 RawScrapedItem(
                     source=SourceType.KAP,
-                    ticker=self.ticker.symbol,
+                    ticker=ticker_symbol,
                     raw_title=disclosure.get("subject") or disclosure.get("summary") or "",
                     raw_url=self._disclosure_url(disclosure.get("disclosureIndex")),
                     raw_published_at=disclosure.get("publishDate"),
