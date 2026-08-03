@@ -75,6 +75,11 @@ class NewsItem(BaseModel):
     # Populated by dedup.py; not set at construction time.
     content_hash: str | None = None
 
+    # Populated by dedup.py when a KAP item is dropped as a duplicate of this
+    # item (KAP is deprioritized vs. GOOGLE_NEWS/BIGPARA per SOURCE_PRIORITY,
+    # config/constants.py) — preserves the KAP link instead of losing it.
+    related_kap_url: HttpUrl | None = None
+
     @field_validator("ticker")
     @classmethod
     def _uppercase_ticker(cls, v: str) -> str:

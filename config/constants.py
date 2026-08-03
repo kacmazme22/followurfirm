@@ -109,3 +109,22 @@ BOILERPLATE_NOISE_PATTERNS: list[str] = [
 ]
 
 DEFAULT_CATEGORY = NewsCategory.GENERAL_SECTOR
+
+# ---------------------------------------------------------------------------
+# Cross-source dedup priority (nlp/dedup.py): when the same story is reported
+# by more than one source, the higher-priority source wins and is kept.
+# GOOGLE_NEWS/BIGPARA outrank KAP because they're readable news write-ups,
+# while a raw KAP disclosure is terser — but the KAP link is never dropped
+# outright, it's preserved on the surviving item via NewsItem.related_kap_url.
+# ---------------------------------------------------------------------------
+SOURCE_PRIORITY: dict[SourceType, int] = {
+    SourceType.GOOGLE_NEWS: 2,
+    SourceType.BIGPARA: 2,
+    SourceType.KAP: 1,
+    SourceType.COMPANY_IR: 0,
+    SourceType.WEB_SEARCH_FALLBACK: 0,
+    SourceType.SEC_EDGAR: 0,
+    SourceType.YAHOO_FINANCE: 0,
+    SourceType.FINVIZ: 0,
+    SourceType.PR_NEWSWIRE: 0,
+}
