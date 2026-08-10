@@ -168,6 +168,37 @@ class CompanyReport(BaseModel):
         return [(cat, self.items_by_category[cat]) for cat in order if self.items_by_category.get(cat)]
 
 
+class SynthesizedSection(BaseModel):
+    """LLM'in bir kategori içinde ürettiği tek bir alt-başlık + düzyazı bloğu."""
+
+    subheading: str = Field(..., min_length=1, max_length=100)
+    narrative: str = Field(..., min_length=1)
+    source_urls: list[HttpUrl] = Field(default_factory=list)
+
+
+class SynthesizedCompanyReport(BaseModel):
+    """CompanyReport'un LLM-sentezli hali — üst kategori (NewsCategory) sabit,
+    alt-başlık (SynthesizedSection.subheading) LLM tarafından dinamik üretiliyor."""
+
+    ticker: str
+    company_name: str
+    sections_by_category: dict[NewsCategory, list[SynthesizedSection]] = Field(default_factory=dict)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def ordered_sections(self) -> list[tuple[NewsCategory, list[SynthesizedSection]]]:
+        """CompanyReport.ordered_categories() ile aynı sabit sıra mantığı, boş kategoriler atlanır."""
+        order = [
+            NewsCategory.NEW_BUSINESS,
+            NewsCategory.FINANCIALS,
+            NewsCategory.KAP_MATERIAL,
+            NewsCategory.GENERAL_SECTOR,
+        ]
+        return [(cat, self.sections_by_category[cat]) for cat in order if self.sections_by_category.get(cat)]
+
+    def is_empty(self) -> bool:
+        return not any(self.sections_by_category.values())
+
+
 class DigestRun(BaseModel):
     """Top-level container for one full pipeline execution — what gets
     handed to the email renderer."""
