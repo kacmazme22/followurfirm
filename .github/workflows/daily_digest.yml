@@ -1,0 +1,42 @@
+# Runs main.py on a schedule: scrape -> categorize -> dedup -> render ->
+# email. The cron value below mirrors config/config.yaml's
+# `schedule.cron_utc` ("0 5 * * *" = 08:00 Europe/Istanbul) — if that value
+# changes, update it here too, GitHub Actions can't read config.yaml for its
+# own trigger.
+name: Daily Digest
+
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run-digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run digest pipeline
+        env:
+          AI_PROVIDER: noop
+          # DRY_RUN=true until manually verified — see README. Flip to
+          # "false" only after a human has confirmed a real send works.
+          DRY_RUN: "true"
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: python main.py
+
+      - name: Upload generated digest HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-output
+          path: output/
+          retention-days: 14

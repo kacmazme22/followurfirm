@@ -1,7 +1,9 @@
 """
 Pipeline orchestrator: scrape -> categorize -> dedup -> (noop-by-default) LLM
-polish -> render HTML. No email sending here — that's a separate later task.
-Running this module writes the rendered digest to output/digest_{date}.html.
+polish -> render HTML -> email. Running this module writes the rendered
+digest to output/digest_{date}.html AND calls send_digest_email() — which is
+itself a no-op against the real network as long as DRY_RUN=true (see
+utils/email_sender.py and README.md).
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from scrapers.google_news_scraper import GoogleNewsScraper
 from scrapers.kap_scraper import KapScraper
 from scrapers.models import CompanyReport, DigestRun, RawScrapedItem
 from templates.styles import template_colors
+from utils.email_sender import build_digest_subject, send_digest_email
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +114,12 @@ def render_digest_html(digest_run: DigestRun) -> str:
 
 
 if __name__ == "__main__":
+    settings = get_settings()
+    logging.basicConfig(
+        level=getattr(logging, settings.yaml.logging.get("level", "INFO"), logging.INFO),
+        format="%(levelname)s %(name)s: %(message)s",
+    )
+
     result = asyncio.run(run_pipeline())
     rendered_html = render_digest_html(result)
 
@@ -118,3 +127,6 @@ if __name__ == "__main__":
     output_path = OUTPUT_DIR / f"digest_{date.today().isoformat()}.html"
     output_path.write_text(rendered_html, encoding="utf-8")
     print(f"Digest written to {output_path}")
+
+    subject = build_digest_subject(settings)
+    send_digest_email(rendered_html, subject, settings.yaml.recipients, settings)
