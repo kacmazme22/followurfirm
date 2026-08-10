@@ -1,15 +1,17 @@
 """
-Provider-agnostic interface for Tier-2 LLM synthesis. A provider only polishes
-text (summarizing/cleaning up body_snippet content) — it never touches
-categorization or dedup decisions, those are settled by nlp/categorizer.py
-and nlp/dedup.py before a CompanyReport ever reaches a provider.
+Provider-agnostic interface for Tier-2 LLM synthesis. A provider turns a
+CompanyReport's raw, deduped NewsItems into a SynthesizedCompanyReport —
+dynamic LLM-authored subheadings + narrative prose grouped under the fixed
+NewsCategory buckets. Category/dedup decisions are already settled by
+nlp/categorizer.py and nlp/dedup.py before a CompanyReport ever reaches a
+provider; a provider only decides how to narrate what's already there.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from scrapers.models import CompanyReport
+from scrapers.models import CompanyReport, SynthesizedCompanyReport
 
 
 class SummarizerProvider(ABC):
@@ -18,7 +20,9 @@ class SummarizerProvider(ABC):
     nlp/providers/factory.py."""
 
     @abstractmethod
-    async def summarize_company_report(self, report: CompanyReport) -> CompanyReport:
-        """When needed, uses an LLM to shorten/clean up items' body_snippet
-        text. Does NOT change category or dedup decisions — text polish
-        only."""
+    async def summarize_company_report(self, report: CompanyReport) -> SynthesizedCompanyReport:
+        """Converts a CompanyReport (raw NewsItems, already categorized and
+        deduped) into a SynthesizedCompanyReport (LLM-authored subheadings +
+        narrative). Implementations may raise RuntimeError on failure —
+        callers (main.py) are expected to catch it and fall back to
+        NoopProvider for that ticker rather than have the pipeline crash."""

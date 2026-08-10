@@ -157,7 +157,7 @@ class Settings(BaseSettings):
     # nlp/providers/factory.py. Never set this to a metered provider.
     ai_provider: Literal["groq", "noop"] = "noop"
     groq_api_key: str | None = None
-    groq_model: str = "llama-3.1-8b-instant"
+    groq_model: str = "openai/gpt-oss-120b"
 
     # --- SMTP / email delivery ---
     smtp_host: str = "smtp.gmail.com"

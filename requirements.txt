@@ -9,3 +9,4 @@ Jinja2>=3.1
 python-dateutil>=2.9
 rapidfuzz>=3.9   # fast fuzzy string matching for dedup.py
 tenacity>=8.3    # retry/backoff helper used sparingly per politeness rules
+groq>=1.6        # nlp/providers/groq_provider.py, only used when AI_PROVIDER=groq

@@ -204,7 +204,7 @@ class DigestRun(BaseModel):
     handed to the email renderer."""
 
     run_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    company_reports: list[CompanyReport] = Field(default_factory=list)
+    company_reports: list[SynthesizedCompanyReport] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)  # graceful-degradation log surfaced in footer/logs
 
     def add_error(self, source: SourceType | str, ticker: str, message: str) -> None:

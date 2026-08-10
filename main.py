@@ -20,10 +20,11 @@ from config.settings import AppConfig, PolitenessConfig, TickerConfig, get_setti
 from nlp.categorizer import categorize_batch
 from nlp.dedup import deduplicate
 from nlp.providers.factory import get_provider
+from nlp.providers.noop_provider import NoopProvider
 from scrapers.bigpara_scraper import BigparaScraper
 from scrapers.google_news_scraper import GoogleNewsScraper
 from scrapers.kap_scraper import KapScraper
-from scrapers.models import CompanyReport, DigestRun, RawScrapedItem
+from scrapers.models import CompanyReport, DigestRun, RawScrapedItem, SynthesizedCompanyReport
 from templates.styles import template_colors
 from utils.email_sender import build_digest_subject, send_digest_email
 
@@ -64,7 +65,7 @@ async def _build_company_report(
     kap_raw_by_ticker: dict[str, list[RawScrapedItem]],
     settings: AppConfig,
     digest_run: DigestRun,
-) -> CompanyReport:
+) -> SynthesizedCompanyReport:
     raw_items: list[RawScrapedItem] = list(kap_raw_by_ticker.get(ticker.symbol, []))
 
     bigpara_result = await BigparaScraper(ticker, settings.yaml.sources.bigpara).run()
@@ -87,7 +88,18 @@ async def _build_company_report(
         report.add_item(item)
 
     provider = get_provider(settings)
-    return await provider.summarize_company_report(report)
+    try:
+        return await provider.summarize_company_report(report)
+    except RuntimeError as exc:
+        # LLM synthesis failed (bad/truncated response, invalid JSON, schema
+        # mismatch — see GroqProvider's hallucination guards). Fall back to
+        # the raw-item rendering instead of losing the ticker's digest
+        # section entirely, and surface why in the footer via digest_run.errors.
+        logger.error("LLM synthesis failed for %s: %s", ticker.symbol, exc, exc_info=True)
+        digest_run.add_error(
+            "llm", ticker.symbol, f"LLM sentezi başarısız oldu ({exc}), ham liste gösteriliyor"
+        )
+        return await NoopProvider().summarize_company_report(report)
 
 
 async def run_pipeline() -> DigestRun:

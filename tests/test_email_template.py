@@ -1,9 +1,13 @@
 """
 Renders templates/email_base.html against a synthetic DigestRun so the
-output can be visually inspected — there's no real DigestRun yet (that's
-main.py's job, not written yet). Covers: multiple tickers, multiple
-categories, an item with related_kap_url, an empty ticker, and a footer
-error.
+output can be visually inspected. Builds CompanyReports (raw NewsItems) the
+same way the real pipeline does, then runs them through NoopProvider to get
+the SynthesizedCompanyReport shape the template actually consumes — DigestRun
+holds SynthesizedCompanyReport now, not CompanyReport (see main.py /
+nlp/providers/).
+
+Covers: multiple tickers, multiple categories, an item with related_kap_url,
+an empty ticker, and a footer error.
 
 Run directly:
 
@@ -15,12 +19,14 @@ not meant to be committed — see .gitignore).
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
 from config.constants import NewsCategory, SourceType
+from nlp.providers.noop_provider import NoopProvider
 from scrapers.models import CompanyReport, DigestRun, NewsItem
 from templates.styles import template_colors
 
@@ -28,7 +34,7 @@ TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 OUTPUT_PATH = Path(__file__).parent / "output" / "sample_digest.html"
 
 
-def _build_sample_digest_run() -> DigestRun:
+def _build_sample_reports() -> list[CompanyReport]:
     thyao = CompanyReport(ticker="THYAO", company_name="Türk Hava Yolları")
     thyao.add_item(
         NewsItem(
@@ -78,14 +84,16 @@ def _build_sample_digest_run() -> DigestRun:
 
     astor = CompanyReport(ticker="ASTOR", company_name="Astor Enerji")  # deliberately empty
 
-    digest = DigestRun(run_date=datetime(2026, 8, 3, 8, 0, 0))
-    digest.company_reports = [thyao, garan, astor]
-    digest.add_error(SourceType.BIGPARA, "EREGL", "timeout after 15s")
-    return digest
+    return [thyao, garan, astor]
 
 
-def main() -> None:
-    digest_run = _build_sample_digest_run()
+async def main() -> None:
+    provider = NoopProvider()
+    synthesized_reports = [await provider.summarize_company_report(r) for r in _build_sample_reports()]
+
+    digest_run = DigestRun(run_date=datetime(2026, 8, 3, 8, 0, 0))
+    digest_run.company_reports = synthesized_reports
+    digest_run.add_error(SourceType.BIGPARA, "EREGL", "timeout after 15s")
 
     env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
     template = env.get_template("email_base.html")
@@ -98,7 +106,7 @@ def main() -> None:
     assert "GARAN" in html
     assert "ASTOR" in html
     assert "Bugün ASTOR için yeni bir gelişme yok." in html
-    assert "https://www.kap.org.tr/tr/Bildirim/1641972" in html, "related_kap_url should render as a KAP link"
+    assert "https://www.kap.org.tr/tr/Bildirim/1641972" in html, "related_kap_url should render as a source link"
     assert "timeout after 15s" in html, "footer should surface the error"
     assert "EREGL" in html
 
@@ -107,4 +115,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

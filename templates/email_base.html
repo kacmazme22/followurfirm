@@ -59,34 +59,26 @@
                 Bugün {{ report.ticker }} için yeni bir gelişme yok.
               </div>
               {% else %}
-                {% for category, items in report.ordered_categories() %}
+                {% for category, sections in report.ordered_sections() %}
                 {% set badge = colors.CATEGORY_BADGES[category.value] %}
                 <div style="margin-bottom:16px;">
                   <span style="display:inline-block; padding:3px 9px; border-radius:4px; background-color:{{ badge.bg }}; color:{{ badge.text }}; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.02em; margin-bottom:8px;">
                     {{ category.display_name_tr }}
                   </span>
 
-                  {% for item in items %}
+                  {% for section in sections %}
                   <div style="margin-top:10px; padding-top:10px; {% if not loop.first %}border-top:1px solid {{ colors.BORDER_GREY }};{% endif %}">
                     <div style="font-size:14px; font-weight:600; color:{{ colors.PRIMARY_DARK }};">
-                      {{ item.title }}
+                      {{ section.subheading }}
                     </div>
-                    {% if item.body_snippet %}
-                    <div style="margin-top:4px; font-size:13px; color:{{ colors.TEXT_GREY }}; line-height:1.4; max-height:2.8em; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">
-                      {{ item.body_snippet }}
+                    <div style="margin-top:4px; font-size:13px; color:{{ colors.TEXT_GREY }}; line-height:1.4;">
+                      {{ section.narrative }}
                     </div>
-                    {% endif %}
-                    {% if item.url or item.related_kap_url %}
+                    {% if section.source_urls %}
                     <div style="margin-top:6px; font-size:12px;">
-                      {% if item.url %}
-                      <a href="{{ item.url }}" style="color:{{ badge.text }}; text-decoration:none; font-weight:600;">Kaynak &rarr;</a>
-                      {% endif %}
-                      {% if item.url and item.related_kap_url %}
-                      <span style="color:{{ colors.BORDER_GREY }}; margin:0 6px;">&middot;</span>
-                      {% endif %}
-                      {% if item.related_kap_url %}
-                      <a href="{{ item.related_kap_url }}" style="color:{{ colors.BADGE_KAP.text }}; text-decoration:none; font-weight:600;">KAP &rarr;</a>
-                      {% endif %}
+                      {% for url in section.source_urls %}
+                      <a href="{{ url }}" style="color:{{ badge.text }}; text-decoration:none; font-weight:600;">Kaynak {{ loop.index }} &rarr;</a>{% if not loop.last %}<span style="color:{{ colors.BORDER_GREY }}; margin:0 6px;">&middot;</span>{% endif %}
+                      {% endfor %}
                     </div>
                     {% endif %}
                   </div>
