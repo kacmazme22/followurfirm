@@ -64,6 +64,32 @@ def test_fuzzy_title_priority_bigpara_over_kap() -> None:
     print("[OK] fuzzy-title dedup: BIGPARA survives over KAP, KAP link preserved on the winner")
 
 
+def test_real_production_titles_asterisks_and_kap_prefix() -> None:
+    """Regression for a real dedup miss found in production digest_2026-08-10.html:
+    the same THYAO KAP disclosure, relayed by two different sources with
+    different cosmetic formatting (asterisks, a leading "KAP" label), scored
+    78.57 on raw token_sort_ratio — below the 88 threshold — so both copies
+    survived. _normalize_for_comparison() strips the asterisks/prefix before
+    scoring; normalized score is ~89.8, so this must now collapse to one."""
+    google_news_item = _item(
+        SourceType.GOOGLE_NEWS, "THYAO",
+        "***THYAO*** TÜRK HAVA YOLLARI A.O. (Özel Durum Açıklaması (Genel))",
+        url="https://news.google.com/rss/articles/example-thyao-1",
+    )
+    bigpara_kap_relay_item = _item(
+        SourceType.BIGPARA, "THYAO",
+        "KAP *** TÜRK HAVA YOLLARI A.O. *** THYAO *** Özel Durum Açıklaması (Genel)",
+        url="https://bigpara.hurriyet.com.tr/haberler/thyao-kap-relay_ID888/",
+    )
+
+    result = deduplicate([google_news_item, bigpara_kap_relay_item])
+
+    assert len(result) == 1, (
+        f"expected the two real production titles to fuzzy-match after normalization, got {len(result)}"
+    )
+    print("[OK] real production titles (asterisks + 'KAP' prefix) now collapse into one after normalization")
+
+
 def test_tie_priority_keeps_first_seen() -> None:
     first = _item(SourceType.GOOGLE_NEWS, "EREGL", "Ereğli Demir Çelik üretim rekoru kırdı", url="https://a.example/1")
     second = _item(SourceType.GOOGLE_NEWS, "EREGL", "Ereğli Demir Çelik'ten üretimde rekor kırıldı", url="https://a.example/2")
@@ -129,6 +155,7 @@ async def test_real_pipeline_smoke() -> None:
 async def main() -> None:
     test_exact_hash_priority()
     test_fuzzy_title_priority_bigpara_over_kap()
+    test_real_production_titles_asterisks_and_kap_prefix()
     test_tie_priority_keeps_first_seen()
     test_different_tickers_never_merge()
     await test_real_pipeline_smoke()
