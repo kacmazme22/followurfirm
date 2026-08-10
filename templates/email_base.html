@@ -1,37 +1,45 @@
 {#
-  Master email layout (KapMail-style). Rendered with:
+  Master email layout — KapMail visual identity (warm cream/sepia editorial
+  look, see email_template.py reference). Rendered with:
       Environment(...).get_template("email_base.html").render(
           digest_run=digest_run, colors=styles.template_colors()
       )
-  Table-based layout with per-element inline styles — no <style> block, no
-  external stylesheet. This is deliberate: most email clients (Outlook
-  desktop especially) strip or ignore <style> blocks and external CSS, so
-  every rule that matters has to live in a `style="..."` attribute.
+  Content/render logic (SynthesizedSection loop, category ordering, footer
+  errors) is unchanged from the previous version — only the visual layer.
 #}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F8FAFC; font-family:{{ colors.FONT_STACK }};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:{{ colors.C.parchment }};">
   <tr>
     <td align="center" style="padding:24px 12px;">
-      <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px; width:100%; background-color:#FFFFFF; border:1px solid {{ colors.BORDER_GREY }}; border-radius:8px; overflow:hidden;">
+      <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px; width:100%; background-color:{{ colors.C.cream }}; border:1px solid {{ colors.C.border }};">
 
         {# ---------------- Header ---------------- #}
         <tr>
-          <td style="padding:24px 28px; border-bottom:1px solid {{ colors.BORDER_GREY }};">
+          <td style="padding:28px 36px 22px; border-bottom:2px solid {{ colors.C.ink }};">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
               <tr>
-                <td style="font-size:20px; font-weight:700; color:{{ colors.PRIMARY_DARK }};">
+                <td style="font-family:{{ colors.SANS }}; font-size:9px; letter-spacing:2.5px; text-transform:uppercase; color:{{ colors.C.cognac }}; padding-bottom:10px;">
+                  BIST İzleme &middot; KAP &middot; Haber
+                </td>
+              </tr>
+              <tr>
+                <td style="font-family:{{ colors.SERIF }}; font-size:30px; font-weight:400; color:{{ colors.C.ink }}; letter-spacing:-0.5px; line-height:1.15;">
                   FollowUrFirm Digest
                 </td>
               </tr>
               <tr>
-                <td style="padding-top:4px; font-size:13px; color:{{ colors.TEXT_GREY }};">
-                  {{ digest_run.run_date.strftime('%d.%m.%Y %H:%M') }}
-                </td>
-              </tr>
-              <tr>
-                <td style="padding-top:12px;">
-                  {% for report in digest_run.company_reports %}
-                  <span style="display:inline-block; margin:0 6px 6px 0; padding:4px 10px; border-radius:999px; background-color:#F1F5F9; color:{{ colors.PRIMARY_DARK }}; font-size:12px; font-weight:600;">{{ report.ticker }}</span>
-                  {% endfor %}
+                <td style="padding-top:10px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td style="font-family:{{ colors.SERIF }}; font-size:14px; font-style:italic; color:{{ colors.C.sepia }};">
+                        {{ digest_run.run_date.strftime('%d.%m.%Y %H:%M') }}
+                      </td>
+                      <td align="right">
+                        {% for report in digest_run.company_reports %}
+                        <span style="display:inline-block; margin-left:6px; padding:3px 9px; background-color:{{ colors.C.parchment }}; border:1px solid {{ colors.C.border }}; font-family:{{ colors.SANS }}; font-size:11px; font-weight:600; color:{{ colors.C.ink }};">{{ report.ticker }}</span>
+                        {% endfor %}
+                      </td>
+                    </tr>
+                  </table>
                 </td>
               </tr>
             </table>
@@ -41,62 +49,80 @@
         {# ---------------- Body ---------------- #}
         {% if not digest_run.has_any_content %}
         <tr>
-          <td style="padding:40px 28px; text-align:center; color:{{ colors.TEXT_GREY }}; font-size:14px;">
+          <td style="padding:40px 36px; text-align:center; font-family:{{ colors.SANS }}; color:{{ colors.C.sepia }}; font-size:14px;">
             Bugün takip ettiğin şirketler için yeni bir gelişme yok. Yarın tekrar bakacağız.
           </td>
         </tr>
         {% else %}
-          {% for report in digest_run.company_reports %}
-          <tr>
-            <td style="padding:24px 28px; {% if not loop.last %}border-bottom:1px solid {{ colors.BORDER_GREY }};{% endif %}">
+        <tr>
+          <td style="padding:28px 36px;">
+            {% for report in digest_run.company_reports %}
+            <div style="margin-bottom:28px;">
 
-              <div style="font-size:16px; font-weight:700; color:{{ colors.PRIMARY_DARK }}; margin-bottom:{{ '4px' if report.is_empty() else '14px' }};">
-                {{ report.ticker }} — {{ report.company_name }}
-              </div>
+              {# Ticker card header — KapMail's _portfoy_section title row #}
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-bottom:1px solid {{ colors.C.border }}; margin-bottom:2px;">
+                <tr>
+                  <td style="padding-bottom:10px; font-family:{{ colors.SERIF }}; font-size:17px; color:{{ colors.C.ink }};">
+                    {{ report.ticker }} <span style="font-style:italic; color:{{ colors.C.sepia }};">— {{ report.company_name }}</span>
+                  </td>
+                  <td align="right" style="padding-bottom:10px; font-family:{{ colors.SANS }}; font-size:11px; font-style:italic; color:{{ colors.C.sepia }}; white-space:nowrap;">
+                    {{ report.generated_at.strftime('%d.%m.%Y') }}
+                  </td>
+                </tr>
+              </table>
 
               {% if report.is_empty() %}
-              <div style="font-size:13px; color:{{ colors.TEXT_GREY }};">
+              <div style="padding:12px 0; font-family:{{ colors.SANS }}; font-size:13px; color:{{ colors.C.sepia }};">
                 Bugün {{ report.ticker }} için yeni bir gelişme yok.
               </div>
               {% else %}
                 {% for category, sections in report.ordered_sections() %}
-                {% set badge = colors.CATEGORY_BADGES[category.value] %}
-                <div style="margin-bottom:16px;">
-                  <span style="display:inline-block; padding:3px 9px; border-radius:4px; background-color:{{ badge.bg }}; color:{{ badge.text }}; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.02em; margin-bottom:8px;">
-                    {{ category.display_name_tr }}
-                  </span>
-
+                {% set cat_color = colors.CATEGORY_COLORS[category.value] %}
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td colspan="3" style="padding:10px 0 4px; font-family:{{ colors.SANS }}; font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:{{ cat_color }};">
+                      <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background-color:{{ cat_color }}; vertical-align:middle; margin-right:6px;"></span>{{ category.display_name_tr }}
+                    </td>
+                  </tr>
                   {% for section in sections %}
-                  <div style="margin-top:10px; padding-top:10px; {% if not loop.first %}border-top:1px solid {{ colors.BORDER_GREY }};{% endif %}">
-                    <div style="font-size:14px; font-weight:600; color:{{ colors.PRIMARY_DARK }};">
-                      {{ section.subheading }}
-                    </div>
-                    <div style="margin-top:4px; font-size:13px; color:{{ colors.TEXT_GREY }}; line-height:1.4;">
-                      {{ section.narrative }}
-                    </div>
-                    {% if section.source_urls %}
-                    <div style="margin-top:6px; font-size:12px;">
-                      {% for url in section.source_urls %}
-                      <a href="{{ url }}" style="color:{{ badge.text }}; text-decoration:none; font-weight:600;">Kaynak {{ loop.index }} &rarr;</a>{% if not loop.last %}<span style="color:{{ colors.BORDER_GREY }}; margin:0 6px;">&middot;</span>{% endif %}
-                      {% endfor %}
-                    </div>
-                    {% endif %}
-                  </div>
+                  <tr style="border-bottom:1px solid {{ colors.C.sand }};">
+                    <td style="padding:12px 0; width:12px; vertical-align:top; text-align:center;">
+                      <span style="display:inline-block; width:9px; height:9px; border-radius:50%; background-color:{{ cat_color }}; vertical-align:middle;"></span>
+                    </td>
+                    <td style="padding:12px 16px 12px 10px; vertical-align:top;">
+                      <div style="font-family:{{ colors.SERIF }}; font-size:15px; color:{{ colors.C.ink }}; margin-bottom:4px;">
+                        {{ section.subheading }}
+                      </div>
+                      <div style="font-family:{{ colors.SANS }}; font-size:13px; color:{{ colors.C.sepia }}; line-height:1.45;">
+                        {{ section.narrative }}
+                      </div>
+                      {% if section.source_urls %}
+                      <div style="margin-top:6px;">
+                        {% for url in section.source_urls %}
+                        <a href="{{ url }}" style="font-family:{{ colors.SANS }}; font-size:11px; color:{{ colors.C.cognac }}; text-decoration:none;">Kaynak {{ loop.index }} &rarr;</a>{% if not loop.last %}<span style="color:{{ colors.C.border }}; margin:0 6px;">&middot;</span>{% endif %}
+                        {% endfor %}
+                      </div>
+                      {% endif %}
+                    </td>
+                    <td style="padding:12px 0 12px 12px; vertical-align:top; text-align:right; border-left:2px solid {{ cat_color }}; white-space:nowrap;">
+                      <span style="font-family:{{ colors.SANS }}; font-size:10px; letter-spacing:.7px; text-transform:uppercase; color:{{ cat_color }}; font-weight:600;">{{ category.display_name_tr }}</span>
+                    </td>
+                  </tr>
                   {% endfor %}
-                </div>
+                </table>
                 {% endfor %}
               {% endif %}
-
-            </td>
-          </tr>
-          {% endfor %}
+            </div>
+            {% endfor %}
+          </td>
+        </tr>
         {% endif %}
 
         {# ---------------- Footer ---------------- #}
         <tr>
-          <td style="padding:20px 28px; background-color:#F8FAFC; border-top:1px solid {{ colors.BORDER_GREY }};">
+          <td style="padding:18px 36px; border-top:1px solid {{ colors.C.border }}; background-color:{{ colors.C.parchment }};">
             {% if digest_run.errors %}
-            <div style="font-size:12px; color:{{ colors.TEXT_GREY }}; margin-bottom:10px;">
+            <div style="font-family:{{ colors.SANS }}; font-size:11px; color:{{ colors.C.cognac }}; margin-bottom:8px;">
               Bugün şu kaynaklardan bazıları geçici olarak çekilemedi, bülten kalanıyla devam etti:
               <ul style="margin:6px 0 0; padding-left:18px;">
                 {% for error in digest_run.errors %}
@@ -105,7 +131,7 @@
               </ul>
             </div>
             {% endif %}
-            <div style="font-size:11px; color:{{ colors.TEXT_GREY }};">
+            <div style="font-family:{{ colors.SANS }}; font-size:11px; color:{{ colors.C.cognac }};">
               FollowUrFirm &middot; {{ digest_run.run_date.strftime('%d.%m.%Y %H:%M') }} itibarıyla oluşturuldu.
             </div>
           </td>
