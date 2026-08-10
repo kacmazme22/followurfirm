@@ -61,6 +61,7 @@ Detaylı mimari ve klasör yapısı için `PROJECT_TREE.md` dosyasına bakın.
 - **`follow_redirects=True` fix'i (2026-08-03)**: Daha önce `BaseScraper._request()` redirect'leri takip etmiyordu, bu yüzden Bigpara sessizce 0 item + `error=None` dönüyordu (hata yok ama veri de yok — fark edilmesi zor bir "sessiz veri kaybı" idi). Artık merkezi olarak düzeltildi, tüm scraper'lara otomatik yayıldı.
 - **Windows terminalinde Türkçe karakterler bozuk görünebilir** (`T�RK` gibi) — bu sadece konsol code page sorunu, gerçek veri (dosyaya yazıldığında/UTF-8 okunduğunda) doğru. Birden fazla kez codepoint seviyesinde doğrulandı.
 - **`GoogleNewsRssConfig`'in kendi `politeness` alanı yok** (`config/settings.py`) — `main.py` şu an kütüphane varsayılanı `PolitenessConfig()`'i kullanıyor, şema değişikliği yapılmadı.
+- **Cron senkronizasyonu**: `config/config.yaml`'daki `schedule.cron_utc` alanı sadece bilgi amaçlıdır, hiçbir şeyi tetiklemez. Gerçek zamanlama `.github/workflows/daily_digest.yml`'deki `schedule.cron` alanından gelir. Bülten saatini değiştirmek isteyen biri her iki dosyayı da güncellemeli.
 
 ### Nasıl devam edilir
 
