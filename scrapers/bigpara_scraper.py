@@ -11,13 +11,22 @@ also has slugs with the company name baked in (e.g.
 live request — so no ticker->slug lookup table is needed.
 
 Time-window filtering: Bigpara exposes no absolute timestamp, only a Turkish
-relative-time string ("2 sa önce", "1 gün önce") — `_parse_relative_turkish_time()`
-converts that to an approximate datetime, which is then compared against
-NEWS_LOOKBACK_HOURS the same way Google News's scraper does. If the string
-doesn't match a known pattern (format changed, unexpected unit, etc.), the
-item is kept rather than dropped — an unparseable date is not evidence the
-article is stale, and silently losing a genuinely current item is worse than
-occasionally keeping one old one.
+relative-time string ("2 sa önce", "1 gün önce", "3 ay önce") —
+`_parse_relative_turkish_time()` converts that to an approximate datetime,
+which is then compared against NEWS_LOOKBACK_HOURS the same way Google
+News's scraper does. If the string doesn't match a known pattern (format
+changed, unexpected unit, etc.), the item is kept rather than dropped — an
+unparseable date is not evidence the article is stale, and silently losing a
+genuinely current item is worse than occasionally keeping one old one.
+
+Bug fixed 2026-08-13: the initial version only recognized dk/dakika/sa/saat/
+gün units. Live YUNSA data showed most of a ticker's news cards are actually
+"1 ay önce" / "3 ay önce" (months old) — a real, common case for
+lower-volume tickers, not a rare edge case — so those items hit the "can't
+parse, keep it" fallback above and sailed straight through the filter
+unfiltered (17 of YUNSA's 18 raw cards survived a 36h window). "ay" (~30
+days) and "yıl" (~365 days, seen in older KAP-relay history) are now
+recognized too.
 """
 
 from __future__ import annotations
@@ -46,16 +55,25 @@ TITLE_SELECTOR = "a.news-card__title"
 INFO_SELECTOR = "div.news-card__info"
 INFO_SEPARATOR = "･"
 
-# Matches "3 dk önce", "2 saat önce", "1 gün önce", etc. Unit spelled out
-# ("dakika"/"saat") or abbreviated ("dk"/"sa") — both observed live.
-_RELATIVE_TIME_RE = re.compile(r"(\d+)\s*(dk|dakika|sa|saat|gün)\s*önce", re.IGNORECASE)
+# Matches "3 dk önce", "2 saat önce", "1 gün önce", "3 ay önce", "1 yıl
+# önce", etc. Unit spelled out ("dakika"/"saat") or abbreviated ("dk"/"sa")
+# — both observed live, as are all of gün/ay/yıl.
+_RELATIVE_TIME_RE = re.compile(r"(\d+)\s*(dk|dakika|sa|saat|gün|ay|yıl)\s*önce", re.IGNORECASE)
 
+# Units with an exact timedelta() equivalent.
 _UNIT_TO_TIMEDELTA_ARG = {
     "dk": "minutes",
     "dakika": "minutes",
     "sa": "hours",
     "saat": "hours",
     "gün": "days",
+}
+
+# "ay"/"yıl" have no fixed length — approximated in days, which is more than
+# precise enough for a 36h-scale staleness filter.
+_UNIT_TO_APPROX_DAYS = {
+    "ay": 30,
+    "yıl": 365,
 }
 
 
@@ -68,10 +86,14 @@ def _parse_relative_turkish_time(text: str | None, now: datetime | None = None) 
     match = _RELATIVE_TIME_RE.search(text)
     if not match:
         return None
-    unit_arg = _UNIT_TO_TIMEDELTA_ARG.get(match.group(2).lower())
-    if unit_arg is None:
-        return None
-    return (now or datetime.now()) - timedelta(**{unit_arg: int(match.group(1))})
+    amount = int(match.group(1))
+    unit = match.group(2).lower()
+    now = now or datetime.now()
+    if unit in _UNIT_TO_TIMEDELTA_ARG:
+        return now - timedelta(**{_UNIT_TO_TIMEDELTA_ARG[unit]: amount})
+    if unit in _UNIT_TO_APPROX_DAYS:
+        return now - timedelta(days=_UNIT_TO_APPROX_DAYS[unit] * amount)
+    return None
 
 
 class BigparaScraper(BaseScraper):

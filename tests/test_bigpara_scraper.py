@@ -39,7 +39,11 @@ def test_parse_relative_turkish_time() -> None:
     assert _parse_relative_turkish_time("2 sa önce", now=now) == now - timedelta(hours=2)
     assert _parse_relative_turkish_time("18 saat önce", now=now) == now - timedelta(hours=18)
     assert _parse_relative_turkish_time("1 gün önce", now=now) == now - timedelta(days=1)
+    assert _parse_relative_turkish_time("1 ay önce", now=now) == now - timedelta(days=30)
+    assert _parse_relative_turkish_time("3 ay önce", now=now) == now - timedelta(days=90)
+    assert _parse_relative_turkish_time("1 yıl önce", now=now) == now - timedelta(days=365)
     assert _parse_relative_turkish_time("Aracı Kurum Haberleri ・ 4 sa önce", now=now) == now - timedelta(hours=4)
+    assert _parse_relative_turkish_time("Kap Haberleri ･ 2 ay önce YUNSA -", now=now) == now - timedelta(days=60)
 
     # Unknown/unparseable formats -> None (caller must NOT treat as stale)
     assert _parse_relative_turkish_time(None) is None
