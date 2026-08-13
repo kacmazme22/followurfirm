@@ -13,17 +13,20 @@ market_phase: bist  # bist | global | both
 
 tickers:
   bist:
-    - symbol: THYAO
-      name: "Türk Hava Yolları"
+    - symbol: YUNSA
+      name: "Yünsa Yünlü Sanayi ve Ticaret"
       enabled: true
-    - symbol: EREGL
-      name: "Ereğli Demir Çelik"
+    - symbol: GUBRF
+      name: "Gübre Fabrikaları"
       enabled: true
-    - symbol: GARAN
-      name: "Garanti BBVA"
+    - symbol: ULUUN
+      name: "Ulusoy Un Sanayi ve Ticaret"
       enabled: true
-    - symbol: ASTOR
-      name: "Astor Enerji"
+    - symbol: KCHOL
+      name: "Koç Holding"
+      enabled: true
+    - symbol: AKBNK
+      name: "Akbank"
       enabled: true
   global: []  # Phase 2 — e.g. AAPL, NVDA, TSLA, PLTR
 
