@@ -111,6 +111,17 @@ BOILERPLATE_NOISE_PATTERNS: list[str] = [
 DEFAULT_CATEGORY = NewsCategory.GENERAL_SECTOR
 
 # ---------------------------------------------------------------------------
+# Time-window filtering for sources that have no server-side date filter of
+# their own (Google News RSS, Bigpara) — unlike KAP, which filters by date
+# range in the request itself (scrapers/kap_scraper.py's LOOKBACK_DAYS).
+# 36h = today fully covered, plus a 12h safety margin against the midnight
+# boundary (same reasoning KAP's LOOKBACK_DAYS=2 uses, just in hours since
+# these two sources expose finer-grained timestamps than KAP's date-only
+# window).
+# ---------------------------------------------------------------------------
+NEWS_LOOKBACK_HOURS = 36
+
+# ---------------------------------------------------------------------------
 # Cross-source dedup priority (nlp/dedup.py): when the same story is reported
 # by more than one source, the higher-priority source wins and is kept.
 # GOOGLE_NEWS/BIGPARA outrank KAP because they're readable news write-ups,
