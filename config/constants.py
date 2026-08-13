@@ -122,6 +122,18 @@ DEFAULT_CATEGORY = NewsCategory.GENERAL_SECTOR
 NEWS_LOOKBACK_HOURS = 36
 
 # ---------------------------------------------------------------------------
+# Article-body enrichment (utils/article_fetcher.py): Google News and Bigpara
+# list views only ever expose a headline, never real article content (see
+# the 2026-08-13 diagnosis — this was why LLM synthesis produced generic
+# filler instead of analyzing anything). Enrichment fetches the item's own
+# page and extracts the real body via trafilatura, but costs an extra
+# request (+ a Google News redirect-token decode) per item, so it's bounded
+# to the N most recent time-filtered items per ticker per source rather than
+# applied to every item.
+# ---------------------------------------------------------------------------
+MAX_ARTICLES_TO_ENRICH_PER_TICKER = 8
+
+# ---------------------------------------------------------------------------
 # Cross-source dedup priority (nlp/dedup.py): when the same story is reported
 # by more than one source, the higher-priority source wins and is kept.
 # GOOGLE_NEWS/BIGPARA outrank KAP because they're readable news write-ups,

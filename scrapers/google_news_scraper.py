@@ -13,6 +13,11 @@ client-side, using `entry.published_parsed` (feedparser's own normalized
 `time.struct_time`, already UTC — not the raw `published` string). Items
 older than NEWS_LOOKBACK_HOURS are dropped before ever becoming a
 RawScrapedItem, so they never reach categorize()/dedup()/the LLM.
+
+Article-body enrichment: after time-filtering, the MAX_ARTICLES_TO_ENRICH_PER_TICKER
+most recent surviving items get their raw_body_snippet filled in with the
+real article body (utils/article_fetcher.py) instead of staying title-only
+— see that module's docstring for why this exists and what it costs.
 """
 
 from __future__ import annotations
@@ -23,10 +28,11 @@ from urllib.parse import quote
 
 import feedparser
 
-from config.constants import NEWS_LOOKBACK_HOURS, SourceType
+from config.constants import MAX_ARTICLES_TO_ENRICH_PER_TICKER, NEWS_LOOKBACK_HOURS, SourceType
 from config.settings import GoogleNewsRssConfig, PolitenessConfig, TickerConfig
 from scrapers.base import BaseScraper
 from scrapers.models import RawScrapedItem
+from utils.article_fetcher import fetch_article_body
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +100,33 @@ class GoogleNewsScraper(BaseScraper):
             "%s: %d item, zaman filtresiyle %d tanesi elendi",
             self.ticker.symbol, len(feed.entries), skipped,
         )
+
+        await self._enrich_with_article_bodies(items)
         # An empty feed (0 results) is a normal outcome, not an error —
         # returning an empty list here, no exception.
         return items
+
+    async def _enrich_with_article_bodies(self, items: list[RawScrapedItem]) -> None:
+        """Mutates the newest MAX_ARTICLES_TO_ENRICH_PER_TICKER items in
+        place, filling raw_body_snippet with real article text where
+        possible. `items` is already newest-first (feed order), so a plain
+        slice picks the most recent ones."""
+        enriched = 0
+        failed = 0
+        for item in items[:MAX_ARTICLES_TO_ENRICH_PER_TICKER]:
+            if not item.raw_url:
+                continue
+            body = await fetch_article_body(self, item.raw_url, is_google_news=True)
+            if body:
+                item.raw_body_snippet = body
+                enriched += 1
+            else:
+                failed += 1
+
+        logger.info(
+            "%s: %d haber zenginleştirildi, %d'si başarısız/boş döndü",
+            self.ticker.symbol, enriched, failed,
+        )
 
     @staticmethod
     def _split_title_and_source(raw_title: str) -> tuple[str, str | None]:
