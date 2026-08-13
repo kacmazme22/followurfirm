@@ -80,7 +80,7 @@
                 {% set cat_color = colors.CATEGORY_COLORS[category.value] %}
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr>
-                    <td colspan="3" style="padding:10px 0 4px; font-family:{{ colors.SANS }}; font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:{{ cat_color }};">
+                    <td colspan="2" style="padding:10px 0 6px; font-family:{{ colors.SANS }}; font-size:13px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:{{ cat_color }};">
                       <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background-color:{{ cat_color }}; vertical-align:middle; margin-right:6px;"></span>{{ category.display_name_tr }}
                     </td>
                   </tr>
@@ -89,7 +89,7 @@
                     <td style="padding:12px 0; width:12px; vertical-align:top; text-align:center;">
                       <span style="display:inline-block; width:9px; height:9px; border-radius:50%; background-color:{{ cat_color }}; vertical-align:middle;"></span>
                     </td>
-                    <td style="padding:12px 16px 12px 10px; vertical-align:top;">
+                    <td style="padding:12px 0 12px 10px; vertical-align:top;">
                       <div style="font-family:{{ colors.SERIF }}; font-size:15px; color:{{ colors.C.ink }}; margin-bottom:4px;">
                         {{ section.subheading }}
                       </div>
@@ -103,9 +103,6 @@
                         {% endfor %}
                       </div>
                       {% endif %}
-                    </td>
-                    <td style="padding:12px 0 12px 12px; vertical-align:top; text-align:right; border-left:2px solid {{ cat_color }}; white-space:nowrap;">
-                      <span style="font-family:{{ colors.SANS }}; font-size:10px; letter-spacing:.7px; text-transform:uppercase; color:{{ cat_color }}; font-weight:600;">{{ category.display_name_tr }}</span>
                     </td>
                   </tr>
                   {% endfor %}
