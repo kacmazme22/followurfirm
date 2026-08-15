@@ -118,9 +118,23 @@ KRİTİK KURALLAR (ihlal edilemez):
 - Kaynak metinde adı geçmeyen hiçbir aracı kurum, analist veya şirket ismini ekleme.
 
 İÇERİK FİLTRESİ:
-- DIŞLA: günlük açılış-kapanış fiyatı, işlem hacmi, açığa satış hacmi/oranı gibi anlık/ham piyasa verileri. Bu tür haberler yatırımcının kendi grafik ekranlarından takip ettiği "an itibariyle fotoğraf" niteliğindedir; bültende tekrarına gerek yoktur.
+- DIŞLA: günlük açılış-kapanış fiyatı, işlem hacmi, açığa satış hacmi/oranı gibi anlık/ham piyasa verileri. Bu tür haberler yatırımcının kendi grafik ekranlarından takip ettiği "an itibariyle fotoğraf" niteliğindedir; bültende tekrarına gerek yoktur. Ham veri maddeleri, tek başına yorum veya bağlam içermiyorsa, asla section'a çevrilmemelidir.
+- DIŞLA: sorumluluk beyanı, yasal uyum beyanı ve benzeri prosedürel/hukuki formalite açıklamaları. Özellikle "belgenin doğruluğu/sorumluluğu beyan edilmiştir" türü kalıp metinler yatırım kararına girdi üretmiyorsa tamamen atlanmalıdır.
+- DIŞLA: birden fazla farklı hisseye, endekse veya yatırım fikrine ait karışık istatistik tabloları / teknik takip listeleri. Eğer kaynak metni birden fazla ticker kodu, BIST100/BIST50 gibi endeks satırları ve çok sayıda fiyat/ölçü sütununu aynı anda içeriyorsa (örn. "MIATK EREGL ALTNY AKBNK ..." veya "BIST100 / BIST50 / AEFES / AKBNK / KCHOL..." gibi karışık tablo pasajları), bu tür içerik TAMAMEN ATLANMALIDIR. Bu, tek hisseye özel ve anlamlı bir haber değil, çok-hisseli toplu veri dökümüdür.
 - DAHİL ET: teknik analiz, destek/direnç seviyeleri, hareketli ortalamalar gibi yorumlanmış analizler; endeks veya sektör karşılaştırmaları; KAP açıklamaları, aracı kurum raporları, şirket haberleri gibi yapısal gelişmeler (yeni sözleşme, kredi anlaşması, temettü kararı, yönetim değişikliği, ortaklık yapısı değişikliği vb.).
+- Eğer bir madde sadece fiyat, hacim, oran, günlük değişim, açığa satış miktarı gibi ham veriden oluşuyorsa, onu hiçbir şekilde section yapma; tamamen atla. Eğer aynı madde yorum/bağlam da taşıyorsa, yalnızca yorum/bağlam kısmını koru, ham verileri işleme almayıp onu sil.
 - Bu kurallar, "yalnızca ham metinde geçen bilgiyi kullan, uydurma" kuralıyla çelişmez. Hedef, LLM'in kaynak metnindeki var olan ama atladığı detayları ortaya çıkarmasıdır; rakamı, tutarı veya tarafı kaynakta olmayan şeylerden uydurmak değil.
+
+BİRLEŞTİRME KURALI (tekrarları tek anlatıda topla, bilgi silmeden):
+- Birleştirme SADECE aynı olayı/konuyu anlatan maddeler için geçerlidir.
+- Farklı konulardaki maddeleri asla silme veya tek maddeye indirmeye çalışma — her BAĞIMSIZ konu kendi section'ını hak eder.
+- Birleştirme = aynı bilgiyi tekrar etmemek demektir, bilgi kaybetmek değildir.
+- Aynı temel konu/olayı anlatan birden fazla ham haberi (farklı kaynaklardan gelse bile) TEK bir section içinde birleştir, ama farklı konuya ait maddeler birbirine karıştırılmamalıdır.
+- Kredi kullanımı gibi aynı işlemin farklı parçalarını (tutar, para birimi, amaç, proje) tek birleşik maddede toplamayı tercih et; ancak ayrı ve bağımsız konular için ayrı section bırak.
+- Finansal sonuçlar için tek ve mutlak "en fazla 1 section" kuralı yoktur. Sadece aynı döneme ait aynı olay/konu varsa tek section içinde birleştirilir; farklı bağımsız finansal olaylar ayrı section olarak kalır.
+
+URL YAZIM KURALI:
+- source_urls alanı DIŞINDA, narrative metnine çıplak URL veya parantez içinde link YAZMA. Kaynaklar sadece source_urls listesinde yer almalıdır.
 
 KAP AÇIKLAMALARINI ÖZETLERKEN DERİNLİK KURALI:
 - KAP açıklamalarını asla "şirket KAP üzerinden bir açıklama paylaştı" gibi yüzeysel şekilde geçme.
