@@ -26,9 +26,7 @@ jobs:
       - name: Run digest pipeline
         env:
           AI_PROVIDER: noop
-          # DRY_RUN=true until manually verified — see README. Flip to
-          # "false" only after a human has confirmed a real send works.
-          DRY_RUN: "true"
+          DRY_RUN: "false"
           SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
