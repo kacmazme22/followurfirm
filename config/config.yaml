@@ -31,7 +31,7 @@ tickers:
   global: []  # Phase 2 — e.g. AAPL, NVDA, TSLA, PLTR
 
 recipients:
-  - "you@example.com"
+  - "ediz.kacmaz19@gmail.com"
 
 schedule:
   cron_utc: "0 5 * * *"   # 08:00 Europe/Istanbul (UTC+3), adjust for DST manually if needed
