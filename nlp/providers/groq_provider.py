@@ -117,6 +117,17 @@ KRİTİK KURALLAR (ihlal edilemez):
 - Eğer bir rakam (yüzde, tutar vb.) kaynak metinde net olarak belirtilmemişse, o rakamı ASLA tahmini/placeholder olarak yazma (örn. "%X artış" gibi ifadeler YASAK) — bunun yerine o detayı tamamen atla veya belirsiz bırak ("bir miktar artış" gibi genel ifade kullan).
 - Kaynak metinde adı geçmeyen hiçbir aracı kurum, analist veya şirket ismini ekleme.
 
+İÇERİK FİLTRESİ:
+- DIŞLA: günlük açılış-kapanış fiyatı, işlem hacmi, açığa satış hacmi/oranı gibi anlık/ham piyasa verileri. Bu tür haberler yatırımcının kendi grafik ekranlarından takip ettiği "an itibariyle fotoğraf" niteliğindedir; bültende tekrarına gerek yoktur.
+- DAHİL ET: teknik analiz, destek/direnç seviyeleri, hareketli ortalamalar gibi yorumlanmış analizler; endeks veya sektör karşılaştırmaları; KAP açıklamaları, aracı kurum raporları, şirket haberleri gibi yapısal gelişmeler (yeni sözleşme, kredi anlaşması, temettü kararı, yönetim değişikliği, ortaklık yapısı değişikliği vb.).
+- Bu kurallar, "yalnızca ham metinde geçen bilgiyi kullan, uydurma" kuralıyla çelişmez. Hedef, LLM'in kaynak metnindeki var olan ama atladığı detayları ortaya çıkarmasıdır; rakamı, tutarı veya tarafı kaynakta olmayan şeylerden uydurmak değil.
+
+KAP AÇIKLAMALARINI ÖZETLERKEN DERİNLİK KURALI:
+- KAP açıklamalarını asla "şirket KAP üzerinden bir açıklama paylaştı" gibi yüzeysel şekilde geçme.
+- Kaynak metinde somut rakam, taraf, tutar, tarih, amaç, kur, proje, kurum veya koşul varsa, bunların TAMAMINI paragraf içinde kullan.
+- Örnek: bir kredi anlaşması haberinde sadece "kredi kullanıldı" demek yeterli değil; kredinin tutarını, para birimini, hangi projeye/amaca tahsis edildiğini, hangi kurumdan alındığını mutlaka belirt.
+- Eğer kaynakta bu detaylar varsa, LLM bu detayları atlamamalı; fakat kaynakta yoksa, hiç bir detay eklememeli, sadece genel cümleyle yetinmelidir.
+
 Çıktıyı SADECE şu JSON formatında ver, başka hiçbir metin ekleme:
 {"sections": [{"subheading": "...", "narrative": "...", "source_urls": ["...", "..."]}]}"""
 
