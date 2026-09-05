@@ -14,7 +14,8 @@ pip install -r requirements.txt
 cp .env.example .env
 # .env dosyasını doldurun (SMTP App Password, opsiyonel Groq key)
 
-# config/config.yaml içinde takip edilen tickerlar ve alıcı listesini düzenleyin
+# Takip edilen tickerları `config/config.yaml` içindeki `tickers` bölümünden,
+# alıcı listesini de aynı dosyadaki `recipients` bölümünden düzenleyin.
 
 python -m config.settings   # sanity check: config doğru okunuyor mu?
 python main.py              # scrape -> categorize -> dedup -> render, output/digest_{tarih}.html yazar (email gönderimi henüz yok)

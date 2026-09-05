@@ -5,7 +5,7 @@ followurfirm/
 ├── config/
 │   ├── __init__.py
 │   ├── settings.py          # pydantic-settings: env-driven, typed config object
-│   ├── config.yaml          # human-edited: tickers, recipients, source toggles
+│   ├── config.yaml          # human-edited: tracked tickers, recipients, source toggles
 │   └── constants.py         # KAP disclosure-type keyword maps, category enums
 │
 ├── scrapers/
