@@ -13,15 +13,15 @@ market_phase: bist  # bist | global | both
 
 tickers:
   bist:
-    - symbol: YUNSA
-      name: "Yünsa Yünlü Sanayi ve Ticaret"
+    - symbol: YEOTK
+      name: "YEO Teknoloji"
       enabled: true
     - symbol: GUBRF
       name: "Gübre Fabrikaları"
       enabled: true
     - symbol: ULUUN
       name: "Ulusoy Un Sanayi ve Ticaret"
-      enabled: true
+      enabled: false
     - symbol: KCHOL
       name: "Koç Holding"
       enabled: true
