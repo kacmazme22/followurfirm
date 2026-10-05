@@ -130,6 +130,11 @@ BOILERPLATE_NOISE_PATTERNS: list[str] = [
     "yukarıdaki açıklamalarımızın",
     "sermaye piyasası kurulu",
     "özel durum açıklamalarımız",
+    # Periodic compliance filings: board-attendance stats and committee
+    # lists made it into the 2026-10-05 dry run as "news" (YEOTK).
+    "kurumsal yönetim uyum",
+    "sürdürülebilirlik uyum",
+    "kurumsal yönetim bilgi formu",
 ]
 
 DEFAULT_CATEGORY = NewsCategory.GENERAL_SECTOR

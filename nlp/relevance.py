@@ -70,6 +70,12 @@ _MARKET_NOISE_PATTERNS = [
         r"en çok (alan|satan|işlem gören|yükselen|düşen|değer kaybeden|değer kazanan)",
         r"günün (en|kazanan|kaybeden)",
         r"(günlük|sabah|piyasa) (bülten|not|yorum)",
+        # Order-flow, not business news: "KCHOL'de iki kurumdan yüklü satış",
+        # broker model-portfolio reweightings (2026-10-05 dry run).
+        r"yüklü (alım|satış)",
+        r"kurum(dan|lardan) (gelen )?(alım|satış)",
+        r"(model|döngüsel) portföy",
+        r"portföy ağırlı",
         # Price-move reports: "Akbank hisseleri yüzde 3 yükseldi", "KCHOL
         # payları %2 değer kaybetti". Requires the hisse/pay subject so an
         # earnings headline ("net kârı yüzde 30 arttı") isn't dropped.

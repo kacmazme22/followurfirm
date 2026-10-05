@@ -13,6 +13,7 @@ import logging
 from datetime import date
 from pathlib import Path
 
+import httpx
 from jinja2 import Environment, FileSystemLoader
 
 from config.constants import SourceType
@@ -37,6 +38,15 @@ OUTPUT_DIR = Path(__file__).parent / "output"
 # of its own (unlike kap/bigpara), so it uses the library default here.
 _GOOGLE_NEWS_POLITENESS = PolitenessConfig()
 
+# KAP is reached from GitHub's US-hosted runners; httpx's default 5s connect
+# timeout and a single attempt left a whole day without KAP items on one
+# ConnectTimeout (2026-10-05) while the same request took ~5s on 2026-10-03.
+# This one request carries every company's disclosures, so it's worth a
+# longer timeout and a couple of retries.
+KAP_TIMEOUT = httpx.Timeout(30.0, connect=20.0)
+KAP_ATTEMPTS = 3
+KAP_RETRY_DELAY_SECONDS = 10
+
 # Only used to construct a KapScraper instance for the bulk fetch below.
 # fetch_all_raw() ignores this ticker entirely — it's just a label, not a
 # filter (see scrapers/kap_scraper.py).
@@ -51,13 +61,26 @@ async def fetch_kap_once_and_group(
     per-ticker KAP calls. Never raises: a KAP-wide failure is logged and
     recorded on digest_run, and the pipeline continues with no KAP items
     for any ticker rather than stopping entirely."""
-    scraper = KapScraper(_KAP_BULK_PLACEHOLDER_TICKER, settings.yaml.sources.kap)
-    try:
-        return await scraper.fetch_all_raw(tickers)
-    except Exception as exc:
-        logger.error("KAP bulk fetch failed: %s", exc, exc_info=True)
-        digest_run.add_error(SourceType.KAP, "ALL", str(exc))
-        return {}
+    last_exc: Exception | None = None
+    for attempt in range(1, KAP_ATTEMPTS + 1):
+        try:
+            async with httpx.AsyncClient(timeout=KAP_TIMEOUT) as client:
+                scraper = KapScraper(_KAP_BULK_PLACEHOLDER_TICKER, settings.yaml.sources.kap, http_client=client)
+                return await scraper.fetch_all_raw(tickers)
+        except Exception as exc:
+            last_exc = exc
+            logger.warning("KAP deneme %d/%d başarısız: %s: %s", attempt, KAP_ATTEMPTS, type(exc).__name__, exc)
+            if attempt < KAP_ATTEMPTS:
+                await asyncio.sleep(KAP_RETRY_DELAY_SECONDS * attempt)
+
+    logger.error("KAP bulk fetch failed", exc_info=last_exc)
+    # str(httpx.ConnectTimeout()) is empty, which put a bare "[kap] ALL: "
+    # line in the email (2026-10-05); name the exception type instead.
+    digest_run.add_error(
+        SourceType.KAP, "ALL",
+        f"KAP'a {KAP_ATTEMPTS} denemede ulaşılamadı ({type(last_exc).__name__}); bugünkü bültende KAP bildirimleri yok.",
+    )
+    return {}
 
 
 async def _build_company_report(

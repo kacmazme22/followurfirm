@@ -105,6 +105,15 @@ def _is_request_too_large(exc: groq.APIStatusError) -> bool:
     error = body.get("error") if isinstance(body.get("error"), dict) else {}
     return error.get("code") == "rate_limit_exceeded" and "too large" in (error.get("message") or "").lower()
 
+def _parse_category(code: str | None) -> NewsCategory:
+    """Model-chosen category code -> NewsCategory; anything unrecognised
+    lands in the general bucket rather than failing the whole call."""
+    try:
+        return NewsCategory(code)
+    except ValueError:
+        return NewsCategory.GENERAL_SECTOR
+
+
 SYSTEM_PROMPT = """Sen bir finansal haber editörüsün. Sana bir hisse senedi için toplanmış ham haber başlıkları, özetleri ve linkleri verilecek. Görevin:
 1. Aynı olayı anlatan haberleri birleştirip TEK bir anlatıya dönüştürmek.
 2. Önemsiz/tekrarcı haberleri atlamak, sadece bilgi değeri olanları kullanmak.
@@ -123,7 +132,10 @@ KRİTİK KURALLAR (ihlal edilemez):
 - DIŞLA: birden fazla farklı hisseye, endekse veya yatırım fikrine ait karışık istatistik tabloları / teknik takip listeleri. Eğer kaynak metni birden fazla ticker kodu, BIST100/BIST50 gibi endeks satırları ve çok sayıda fiyat/ölçü sütununu aynı anda içeriyorsa (örn. "MIATK EREGL ALTNY AKBNK ..." veya "BIST100 / BIST50 / AEFES / AKBNK / KCHOL..." gibi karışık tablo pasajları), bu tür içerik TAMAMEN ATLANMALIDIR. Bu, tek hisseye özel ve anlamlı bir haber değil, çok-hisseli toplu veri dökümüdür.
 - DIŞLA: teknik analiz ve fiyat seviyeleri — destek/direnç, hareketli ortalama, RSI/MACD, formasyon, al-sat seviyesi, "hisse yüzde X yükseldi/düştü" gibi günlük fiyat hareketi haberleri. Okuyucu bunları istemiyor; bülten bir uzun vadeli yatırımcı içindir, fiyat grafiği yerine şirketin işini anlatır.
 - DAHİL ET (asıl amaç budur): şirketin işine ve değerine dair olaylar — yeni sözleşme/sipariş/ihale, yatırım, tesis/kapasite, satın alma/birleşme/ortaklık, ihracat ve yeni pazar, finansal sonuçlar (gelir, kâr, marj ve bunların değişimi), temettü, pay geri alımı, sermaye artırımı/bedelsiz, borçlanma/kredi/tahvil ihracı, yönetim ve ortaklık yapısı değişikliği, içeriden (yönetici/ana ortak) pay alım-satımı, dava/ceza/regülasyon kararları, kredi derecelendirme notu, aracı kurumların hedef fiyat ve tavsiye değişiklikleri (tek cümleyle, kurum adı kaynakta geçiyorsa), şirketin kendi açıkladığı hedef ve beklentiler, sektörü doğrudan etkileyen düzenlemeler.
-- Her section'da önce NE oldu, sonra yatırımcı için NEDEN önemli olduğunu (kaynakta dayanağı varsa: büyüklüğü, ciroya/kâra etkisi, takvimi) yaz. Kaynakta dayanağı olmayan yorum veya tahmin ekleme.
+- Her section'da önce NE oldu, sonra kaynakta dayanağı varsa yatırımcı için önemini (büyüklüğü, ciroya/kâra etkisi, takvimi) yaz. Kaynakta dayanağı yoksa önem cümlesi YAZMA: "dikkat çekecek", "potansiyel etkileri olabilir", "önem taşımaktadır", "güçlendirilmesi açısından" gibi içi boş kapanış cümleleri YASAK.
+- DIŞLA: prosedürel/periyodik KAP içeriği — kurumsal yönetim veya sürdürülebilirlik uyum raporları, yönetim kurulu toplantı/katılım istatistikleri, komite listeleri, "bu açıklama düzeltme/erteleme değildir" gibi form alanları. Bir atama/karar haberi varsa sadece kimin hangi göreve geldiğini yaz, mevzuat madde numaralarını yazma.
+- DIŞLA: blok/kurumsal alım-satım akışı ("X kurumdan yüklü satış"), aracı kurumların model portföy ağırlık değişiklikleri ve takas/aracı kurum dağılımı — bunlar şirketin işine dair değil, hisse akışına dair.
+- Birden çok şirketi kapsayan bir rapordan (ör. sektör raporu) sadece bu hisseye dair kısmı al; diğer şirketlerin hedef fiyat ve tavsiyelerini yazma.
 - Eğer bir madde sadece fiyat, hacim, oran, günlük değişim, açığa satış miktarı gibi ham veriden oluşuyorsa, onu hiçbir şekilde section yapma; tamamen atla. Eğer aynı madde yorum/bağlam da taşıyorsa, yalnızca şirketin işine dair kısmını koru, fiyat ve teknik verileri sil.
 - Hiçbir madde bu kriterleri karşılamıyorsa {"sections": []} döndür — boş bölüm, dolgu metinden iyidir.
 - Bu kurallar, "yalnızca ham metinde geçen bilgiyi kullan, uydurma" kuralıyla çelişmez. Hedef, LLM'in kaynak metnindeki var olan ama atladığı detayları ortaya çıkarmasıdır; rakamı, tutarı veya tarafı kaynakta olmayan şeylerden uydurmak değil.
@@ -145,8 +157,8 @@ KAP AÇIKLAMALARINI ÖZETLERKEN DERİNLİK KURALI:
 - Örnek: bir kredi anlaşması haberinde sadece "kredi kullanıldı" demek yeterli değil; kredinin tutarını, para birimini, hangi projeye/amaca tahsis edildiğini, hangi kurumdan alındığını mutlaka belirt.
 - Eğer kaynakta bu detaylar varsa, LLM bu detayları atlamamalı; fakat kaynakta yoksa, hiç bir detay eklememeli, sadece genel cümleyle yetinmelidir.
 
-Çıktıyı SADECE şu JSON formatında ver, başka hiçbir metin ekleme:
-{"sections": [{"subheading": "...", "narrative": "...", "source_urls": ["...", "..."]}]}"""
+Çıktıyı SADECE şu JSON formatında ver, başka hiçbir metin ekleme ("category" alanını yalnızca kullanıcı mesajı isterse ekle):
+{"sections": [{"category": "...", "subheading": "...", "narrative": "...", "source_urls": ["...", "..."]}]}"""
 
 
 class GroqProvider(SummarizerProvider):
@@ -156,15 +168,36 @@ class GroqProvider(SummarizerProvider):
         self._max_tokens = max_tokens
 
     async def summarize_company_report(self, report: CompanyReport) -> SynthesizedCompanyReport:
+        categories = report.ordered_categories()
+        total_items = sum(len(items) for _, items in categories)
+
         sections_by_category: dict[NewsCategory, list[SynthesizedSection]] = {}
-        for category, items in report.ordered_categories():
-            sections_by_category[category] = await self._synthesize_category(report.ticker, category, items)
+        if total_items <= CHUNK_THRESHOLD:
+            sections_by_category = await self._synthesize_whole_report(report.ticker, categories)
+        else:
+            for category, items in categories:
+                sections_by_category[category] = await self._synthesize_category(report.ticker, category, items)
 
         return SynthesizedCompanyReport(
             ticker=report.ticker,
             company_name=report.company_name,
             sections_by_category=sections_by_category,
         )
+
+    async def _synthesize_whole_report(
+        self, ticker: str, categories: list[tuple[NewsCategory, list[NewsItem]]]
+    ) -> dict[NewsCategory, list[SynthesizedSection]]:
+        """One call for all of a ticker's items. Per-category calls can't see
+        each other, so one broker report filed under both Finansal Sonuçlar
+        and Sektörel came back as three overlapping sections (AKBNK/HSBC,
+        2026-10-05 dry run). Here the model sees everything at once and puts
+        each story in exactly one category."""
+        prompt = self._build_report_prompt(ticker, categories)
+        result: dict[NewsCategory, list[SynthesizedSection]] = {}
+        for category_code, section in await self._call_with_retry(ticker, "tum_kategoriler", prompt):
+            category = _parse_category(category_code)
+            result.setdefault(category, []).append(section)
+        return result
 
     async def _synthesize_category(
         self, ticker: str, category: NewsCategory, items: list[NewsItem]
@@ -178,23 +211,24 @@ class GroqProvider(SummarizerProvider):
 
         sections: list[SynthesizedSection] = []
         for chunk in chunks:
-            sections.extend(await self._call_with_retry(ticker, category, chunk))
+            prompt = self._build_user_prompt(ticker, category, chunk)
+            sections.extend(section for _, section in await self._call_with_retry(ticker, category.value, prompt))
         return sections
 
     async def _call_with_retry(
-        self, ticker: str, category: NewsCategory, items: list[NewsItem]
-    ) -> list[SynthesizedSection]:
+        self, ticker: str, label: str, user_prompt: str
+    ) -> list[tuple[str | None, SynthesizedSection]]:
         last_error: RuntimeError | None = None
         max_tokens = self._max_tokens
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
-                return await self._call_once(ticker, category, items, max_tokens=max_tokens)
+                return await self._call_once(ticker, label, user_prompt, max_tokens=max_tokens)
             except _PayloadTooLargeError as exc:
                 last_error = exc
                 reduced = max(1, int(max_tokens * PAYLOAD_TOO_LARGE_RETRY_FACTOR))
                 logger.warning(
                     "Groq %s/%s deneme %d/%d: istek çok büyük (413), max_tokens %d -> %d ile %s",
-                    ticker, category.value, attempt, MAX_ATTEMPTS, max_tokens, reduced,
+                    ticker, label, attempt, MAX_ATTEMPTS, max_tokens, reduced,
                     "tekrar deneniyor" if attempt < MAX_ATTEMPTS else "vazgeçiliyor",
                 )
                 max_tokens = reduced
@@ -202,14 +236,17 @@ class GroqProvider(SummarizerProvider):
                 last_error = exc
                 logger.warning(
                     "Groq %s/%s deneme %d/%d başarısız, %s",
-                    ticker, category.value, attempt, MAX_ATTEMPTS,
+                    ticker, label, attempt, MAX_ATTEMPTS,
                     "tekrar deneniyor" if attempt < MAX_ATTEMPTS else "vazgeçiliyor",
                 )
         raise last_error
 
     async def _call_once(
-        self, ticker: str, category: NewsCategory, items: list[NewsItem], max_tokens: int | None = None
-    ) -> list[SynthesizedSection]:
+        self, ticker: str, label: str, user_prompt: str, max_tokens: int | None = None
+    ) -> list[tuple[str | None, SynthesizedSection]]:
+        """Returns (category code or None, section) pairs: the whole-report
+        prompt asks for a "category" field per section, the per-category
+        prompt doesn't and its caller ignores it."""
         try:
             completion = await self._client.chat.completions.create(
                 model=self._model,
@@ -217,12 +254,12 @@ class GroqProvider(SummarizerProvider):
                 response_format={"type": "json_object"},
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": self._build_user_prompt(ticker, category, items)},
+                    {"role": "user", "content": user_prompt},
                 ],
             )
         except groq.APIStatusError as exc:
             if _is_request_too_large(exc):
-                raise _PayloadTooLargeError(f"Groq {ticker}/{category.value}: istek çok büyük (413): {exc}") from exc
+                raise _PayloadTooLargeError(f"Groq {ticker}/{label}: istek çok büyük (413): {exc}") from exc
             # Observed in testing: with response_format=json_object, a
             # request whose max_tokens is too tight for the model to finish
             # valid JSON often doesn't even come back as a truncated
@@ -232,20 +269,20 @@ class GroqProvider(SummarizerProvider):
             # so it gets the same treatment: RuntimeError, let main.py fall
             # back to NoopProvider rather than this bubbling up as a raw
             # APIStatusError main.py isn't watching for.
-            raise RuntimeError(f"Groq {ticker}/{category.value}: API hatası: {exc}") from exc
+            raise RuntimeError(f"Groq {ticker}/{label}: API hatası: {exc}") from exc
 
         choice = completion.choices[0]
 
         if choice.finish_reason != "stop":
             raise RuntimeError(
-                f"Groq {ticker}/{category.value}: finish_reason={choice.finish_reason!r} "
+                f"Groq {ticker}/{label}: finish_reason={choice.finish_reason!r} "
                 f"(beklenen 'stop') — kesik/yarım çıktı kullanılmadı."
             )
 
         try:
             parsed = json.loads(choice.message.content)
         except json.JSONDecodeError as exc:
-            raise RuntimeError(f"Groq {ticker}/{category.value}: geçersiz JSON döndü: {exc}") from exc
+            raise RuntimeError(f"Groq {ticker}/{label}: geçersiz JSON döndü: {exc}") from exc
 
         # response_format={"type": "json_object"} only guarantees *syntactically*
         # valid JSON, not that it matches our schema — the model can (and, in
@@ -254,14 +291,45 @@ class GroqProvider(SummarizerProvider):
         # TypeError leak past this method uncaught.
         if not isinstance(parsed, dict) or not isinstance(parsed.get("sections"), list):
             raise RuntimeError(
-                f"Groq {ticker}/{category.value}: JSON beklenen {{'sections': [...]}} yapısında değil "
+                f"Groq {ticker}/{label}: JSON beklenen {{'sections': [...]}} yapısında değil "
                 f"(üst seviye tip: {type(parsed).__name__})"
             )
 
         try:
-            return [SynthesizedSection.model_validate(section) for section in parsed["sections"]]
+            return [
+                (
+                    section.pop("category", None) if isinstance(section, dict) else None,
+                    SynthesizedSection.model_validate(section),
+                )
+                for section in parsed["sections"]
+            ]
         except ValidationError as exc:
-            raise RuntimeError(f"Groq {ticker}/{category.value}: JSON, SynthesizedSection şemasına uymuyor: {exc}") from exc
+            raise RuntimeError(f"Groq {ticker}/{label}: JSON, SynthesizedSection şemasına uymuyor: {exc}") from exc
+
+    @staticmethod
+    def _build_report_prompt(ticker: str, categories: list[tuple[NewsCategory, list[NewsItem]]]) -> str:
+        codes = ", ".join(f'"{c.value}" ({c.display_name_tr})' for c in NewsCategory)
+        lines = [
+            f"Ticker: {ticker}",
+            "",
+            "Bu hissenin TÜM haberleri aşağıda, kural tabanlı ön-kategorileriyle birlikte veriliyor.",
+            f"Her section'a bir \"category\" alanı ekle; değeri şunlardan biri olmalı: {codes}.",
+            "Ön-kategori bir ipucudur; haberin içeriğine göre daha uygun kategoriyi seçebilirsin.",
+            "Aynı olay/rapor birden fazla haberde veya ön-kategoride geçse bile TEK section yaz ve tek kategoriye koy.",
+            "",
+            "Ham haberler:",
+        ]
+        i = 0
+        for category, items in categories:
+            for item in items:
+                i += 1
+                lines.append(f"{i}. [ön-kategori: {category.value}] Başlık: {item.title}")
+                if item.body_snippet:
+                    lines.append(f"   Özet: {item.body_snippet}")
+                if item.url:
+                    lines.append(f"   URL: {item.url}")
+                lines.append("")
+        return "\n".join(lines)
 
     @staticmethod
     def _build_user_prompt(ticker: str, category: NewsCategory, items: list[NewsItem]) -> str:

@@ -63,10 +63,10 @@ async def fetch_article_body(scraper: BaseScraper, url: str, is_google_news: boo
         try:
             decoded = await asyncio.to_thread(gnewsdecoder, url, interval=1)
         except Exception as exc:
-            logger.debug("Google News URL decode failed for %s: %s", url, exc)
+            logger.info("Google News URL decode failed for %s: %s", url, exc)
             return None
         if not decoded.get("status") or not decoded.get("decoded_url"):
-            logger.debug(
+            logger.info(
                 "Google News URL decode returned no URL for %s: %s", url, decoded.get("message")
             )
             return None
@@ -75,7 +75,7 @@ async def fetch_article_body(scraper: BaseScraper, url: str, is_google_news: boo
     try:
         response = await scraper._get(target_url)
     except Exception as exc:
-        logger.debug("Article fetch failed for %s: %s", target_url, exc)
+        logger.info("Article fetch failed for %s: %s", target_url, exc)
         return None
 
     try:
@@ -83,10 +83,11 @@ async def fetch_article_body(scraper: BaseScraper, url: str, is_google_news: boo
             response.text, url=target_url, include_comments=False, include_tables=False
         )
     except Exception as exc:
-        logger.debug("trafilatura extraction failed for %s: %s", target_url, exc)
+        logger.info("trafilatura extraction failed for %s: %s", target_url, exc)
         return None
 
     if not extracted:
+        logger.info("trafilatura extracted no text from %s (HTTP %s)", target_url, response.status_code)
         return None
 
     return extracted[:MAX_BODY_SNIPPET_CHARS]
