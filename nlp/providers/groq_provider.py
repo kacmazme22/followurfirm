@@ -161,7 +161,8 @@ DIŞLA: teknik analiz ve fiyat seviyeleri, günlük fiyat/hacim/açığa satış
 
 YAZIM:
 - subheading: 1-3 kelimelik olay etiketi ("Yeni iş", "Geri alım", "Temettü", "Varlık satışı", "Satın alma", "Yatırım", "Finansal sonuç", "Borçlanma", "Yönetim", "Ortaklık yapısı", "Patent", "Analist görüşü", "Dava").
-- narrative: EN FAZLA 2 cümle (~45 kelime). Önce olay ve büyüklüğü (tutar, adet, oran, fiyat aralığı, karşı taraf, tarih), sonra varsa tek kritik detay (vade, finansman, devreye alma, kârın kullanımı). Örnek: "Azerenerji (Azerbaycan) ile 250 MWh batarya depolama tesisi için 58,6 mn $'lık EPC-F sözleşmesi imzalandı. Finansman 4 yıl geri ödemeli, tesis 1 yıl içinde devreye girecek."
+- narrative: uzunluğu haberdeki bilgiye göre belirle; kısa yazmak için bilgi atma, uzatmak için dolgu ekleme. Basit bir olay (tek atama, tek patent) 1-2 cümle; çok parçalı bir olay (finansal sonuç, büyük sözleşme, birleşme, analist raporu, geri alım programı) yatırımcının ihtiyaç duyduğu tüm rakamlarla 3-5 cümle. Önce olay ve büyüklüğü (tutar, adet, oran, fiyat aralığı, karşı taraf, tarih), sonra kritik detaylar (vade, finansman, devreye alma, kârın kullanımı, öncekiyle karşılaştırma). Örnek: "Azerenerji (Azerbaycan) ile 250 MWh batarya depolama tesisi için 58,6 mn $'lık EPC-F sözleşmesi imzalandı. Finansman 4 yıl geri ödemeli, tesis 1 yıl içinde devreye girecek."
+- Okuyucu linke tıklamadan anlamalı: haberin özündeki rakamı (hedef fiyat ve önceki değeri, tavsiye, tutar, oran) mutlaka yaz. "Yeni hedef fiyatını duyurdu" gibi rakamsız bir cümle YASAK.
 - Ham metni kopyalama; bildirim dilini ("Şirketimiz", "kamuoyuna duyurulur") ve içi boş yorumları ("dikkat çekecek", "önem taşımaktadır", "olumlu etki") yazma.
 - source_ids: maddeyi destekleyen haberlerin numaraları (ör. [1, 3]). Metne URL yazma.
 
@@ -169,7 +170,7 @@ RAKAM DOĞRULUĞU (en önemli kural):
 - SADECE kaynakta geçen isim, kurum ve rakamları kullan; hiçbir şey uydurma, tahmin etme.
 - Rakamı kaynaktaki birimiyle aktar. Kısaltma yalnızca kesinse: 58.600.000 -> 58,6 mn; 1.500.000.000 -> 1,5 mlr. Birim belirsizse (milyon mu milyar mı) kaynaktaki yazımı aynen kullan; aynı tutarı iki farklı birimle ASLA yazma.
 - Bir tarihin ne olduğu (ihraç, vade, ödeme) kaynakta açık değilse o tarihi yazma.
-- Bir haberin özü bir rakamsa (hedef fiyat, tutar) ve kaynakta o rakam yoksa, o maddeyi hiç yazma.
+- Bir haberin özü bir rakamsa (hedef fiyat, tutar) ve kaynakta o rakam yoksa, o maddeyi hiç yazma. "(metin yok, yalnızca başlık)" işaretli haberlerde bilgi sadece başlıktan ibarettir; başlıkta olmayan hiçbir şeyi yazma.
 - Hiçbir haber kriterlere uymuyorsa {"sections": []} döndür; boş bölüm dolgu metinden iyidir.
 
 Çıktıyı SADECE JSON olarak ver ("category" ve "kisaca" alanlarını yalnızca kullanıcı mesajı isterse ekle):
@@ -387,8 +388,9 @@ class GroqProvider(SummarizerProvider):
         hints = [category.value for category, items in categories for _ in items]
         for i, (item, hint) in enumerate(zip(sources, hints), start=1):
             lines.append(f"{i}. [ön-kategori: {hint}] Başlık: {item.title}")
-            if item.body_snippet:
-                lines.append(f"   Metin: {item.body_snippet[:body_cap]}")
+            lines.append(
+                f"   Metin: {item.body_snippet[:body_cap]}" if item.body_snippet else "   (metin yok, yalnızca başlık)"
+            )
             lines.append("")
         return "\n".join(lines), sources
 
@@ -398,7 +400,8 @@ class GroqProvider(SummarizerProvider):
         body_cap = _body_cap(items)
         for i, item in enumerate(items, start=1):
             lines.append(f"{i}. Başlık: {item.title}")
-            if item.body_snippet:
-                lines.append(f"   Metin: {item.body_snippet[:body_cap]}")
+            lines.append(
+                f"   Metin: {item.body_snippet[:body_cap]}" if item.body_snippet else "   (metin yok, yalnızca başlık)"
+            )
             lines.append("")
         return "\n".join(lines)

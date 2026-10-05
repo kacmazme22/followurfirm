@@ -14,6 +14,7 @@ Never raises: any failure just means no market box today.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
@@ -35,6 +36,23 @@ LOOKBACK_HOURS = 24
 # Same story from several outlets: "TCMB faizi yüzde 38'e indirdi" vs
 # "Merkez Bankası faizi 300 baz puan indirdi - X".
 DUPLICATE_TITLE_SCORE = 85
+QUERY_SPACING_SECONDS = 2.0
+
+
+async def _get_feed(client: httpx.AsyncClient, url: str, query: str) -> httpx.Response | None:
+    """Google News answered back-to-back queries with 503s and timeouts on
+    2026-10-05; space the queries out and retry each once."""
+    for attempt in (1, 2):
+        await asyncio.sleep(QUERY_SPACING_SECONDS * attempt)
+        try:
+            response = await client.get(url)
+            response.raise_for_status()
+            return response
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "Piyasa gündemi sorgusu başarısız (%s, deneme %d/2): %s: %s", query, attempt, type(exc).__name__, exc
+            )
+    return None
 
 
 async def fetch_market_headlines(settings: AppConfig) -> list[NewsItem]:
@@ -43,17 +61,14 @@ async def fetch_market_headlines(settings: AppConfig) -> list[NewsItem]:
     cutoff = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
     headlines: list[NewsItem] = []
 
-    async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=15.0), follow_redirects=True) as client:
         for query in config.queries:
             url = (
                 f"{GOOGLE_NEWS_RSS_BASE}?q={quote(query)}"
                 f"&hl={rss.language}&gl={rss.country}&ceid={rss.country}:{rss.language}"
             )
-            try:
-                response = await client.get(url)
-                response.raise_for_status()
-            except httpx.HTTPError as exc:
-                logger.warning("Piyasa gündemi sorgusu başarısız (%s): %s: %s", query, type(exc).__name__, exc)
+            response = await _get_feed(client, url, query)
+            if response is None:
                 continue
 
             for entry in feedparser.parse(response.text).entries:

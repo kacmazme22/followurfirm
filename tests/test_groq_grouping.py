@@ -92,3 +92,9 @@ def test_source_ids_are_mapped_back_to_urls():
     assert [str(u) for u in section.source_urls] == ["https://www.kap.org.tr/tr/Bildirim/2"]
     # URLs are no longer sent to the model at all.
     assert "https://" not in completions.prompts[0]
+
+
+def test_headline_only_items_are_marked_for_the_model():
+    provider, completions = _provider([])
+    asyncio.run(provider.summarize_company_report(_report(1, 0)))
+    assert "(metin yok, yalnızca başlık)" in completions.prompts[0]
