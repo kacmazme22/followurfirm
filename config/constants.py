@@ -53,8 +53,22 @@ class SourceType(str, Enum):
 # the categorizer iterates this in insertion order and takes the first hit.
 # ---------------------------------------------------------------------------
 KAP_KEYWORD_CATEGORY_MAP: dict[str, NewsCategory] = {
+    # Checked first: buyback headlines often also contain "satın al" ("geri
+    # alım kapsamında pay satın alındı"), which would otherwise land them in
+    # NEW_BUSINESS below.
+    "geri alım": NewsCategory.KAP_MATERIAL,
+    "geri alınan pay": NewsCategory.KAP_MATERIAL,
+
     # New business / tenders / contracts
     "ihale": NewsCategory.NEW_BUSINESS,
+    "sipariş": NewsCategory.NEW_BUSINESS,
+    "satın al": NewsCategory.NEW_BUSINESS,
+    "devral": NewsCategory.NEW_BUSINESS,
+    "ihracat": NewsCategory.NEW_BUSINESS,
+    "yatırım kararı": NewsCategory.NEW_BUSINESS,
+    "yeni tesis": NewsCategory.NEW_BUSINESS,
+    "fabrika": NewsCategory.NEW_BUSINESS,
+    "lisans": NewsCategory.NEW_BUSINESS,
     "sözleşme": NewsCategory.NEW_BUSINESS,
     "satış anlaşması": NewsCategory.NEW_BUSINESS,
     "iş birliği": NewsCategory.NEW_BUSINESS,
@@ -78,6 +92,8 @@ KAP_KEYWORD_CATEGORY_MAP: dict[str, NewsCategory] = {
     "net kâr": NewsCategory.FINANCIALS,
     "ebitda": NewsCategory.FINANCIALS,
     "ciro": NewsCategory.FINANCIALS,
+    "çeyrek": NewsCategory.FINANCIALS,
+    "bilanço beklenti": NewsCategory.FINANCIALS,
 
     # Material KAP disclosures / corporate actions
     "özel durum açıklaması": NewsCategory.KAP_MATERIAL,
@@ -93,6 +109,14 @@ KAP_KEYWORD_CATEGORY_MAP: dict[str, NewsCategory] = {
     "ortaklık yapısı": NewsCategory.KAP_MATERIAL,
     "yönetim değişikliği": NewsCategory.KAP_MATERIAL,
     "istifa": NewsCategory.KAP_MATERIAL,
+    "atama": NewsCategory.KAP_MATERIAL,
+    "genel müdür": NewsCategory.KAP_MATERIAL,
+    "borçlanma aracı": NewsCategory.KAP_MATERIAL,
+    "tahvil": NewsCategory.KAP_MATERIAL,
+    "sendikasyon": NewsCategory.KAP_MATERIAL,
+    "kredi derecelendirme": NewsCategory.KAP_MATERIAL,
+    "pay satış": NewsCategory.KAP_MATERIAL,
+    "dava": NewsCategory.KAP_MATERIAL,
 
     # Fallback bucket — general / sector news picks up anything unmatched above
     # (this key is intentionally never matched directly; categorizer.py treats
