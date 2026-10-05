@@ -21,6 +21,25 @@ python -m config.settings   # sanity check: config doğru okunuyor mu?
 python main.py              # scrape -> categorize -> dedup -> render, output/digest_{tarih}.html yazar (email gönderimi henüz yok)
 ```
 
+## Sabah bülteninin zamanında gelmesi
+
+GitHub'ın zamanlanmış (cron) çalışmaları saatlerce gecikebiliyor, yoğunlukta
+hiç çalışmayabiliyor. Bu yüzden `daily_digest.yml` iki cron ile tetikleniyor
+(07:17 ve 09:13 TR) ve **günde bir kez** kuralı var: maili ilk gönderen
+çalışma bunu Actions cache'ine yazar, aynı gün sonraki tetiklemeler birkaç
+saniyede çıkar. Elle `force` seçeneğiyle yeniden gönderilebilir.
+
+Tam saatinde gelmesi için dışarıdan tetikleme (ücretsiz, ~5 dk kurulum):
+
+1. GitHub → Settings → Developer settings → Fine-grained tokens → yeni token:
+   yalnızca `followurfirm` deposu, izin: **Actions: Read and write**.
+2. cron-job.org'da yeni iş: her gün 07:00 (Europe/Istanbul),
+   `POST https://api.github.com/repos/kacmazme22/followurfirm/actions/workflows/daily_digest.yml/dispatches`
+   - Header'lar: `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`
+   - Gövde: `{"ref":"master","inputs":{"dry_run":"false","ai_provider":"groq"}}`
+3. İstenirse 07:30 için ikinci bir iş: günde-bir-kez kuralı sayesinde ilk
+   çalışma mail attıysa ikincisi hiçbir şey göndermez.
+
 ## Maliyet ilkesi
 
 Bu proje **sıfır ücretli servis** ilkesiyle inşa edilir:

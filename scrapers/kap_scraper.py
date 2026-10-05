@@ -30,6 +30,7 @@ Two ways to use this scraper:
 
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
 
 from config.constants import SourceType
@@ -37,14 +38,16 @@ from config.settings import KapSourceConfig, TickerConfig
 from scrapers.base import BaseScraper
 from scrapers.models import RawScrapedItem
 
+logger = logging.getLogger(__name__)
+
 DISCLOSURE_REFERER = "https://www.kap.org.tr/tr/bildirim-sorgu"
 DISCLOSURE_DETAIL_URL_TEMPLATE = "https://www.kap.org.tr/tr/Bildirim/{disclosure_index}"
 
 # Disclosures can land just after midnight, so the query window is wider than
-# a strict "yesterday->today". This is safe because NewsItem's content_hash
-# dedup (scrapers/models.py) already collapses the same disclosure showing up
-# in two consecutive runs — a wide window + dedup beats a tight window that
-# risks silently dropping a disclosure at the day boundary.
+# a strict "yesterday->today". NOTE: dedup (nlp/dedup.py) only works within a
+# single run — nothing is remembered between runs yet, so a disclosure can
+# appear in two consecutive digests. A wide window that may repeat beats a
+# tight one that risks silently dropping a disclosure at the day boundary.
 LOOKBACK_DAYS = 2
 
 
@@ -73,7 +76,12 @@ class KapScraper(BaseScraper):
         fetch_raw() is unprotected until run() wraps it."""
         async with self._client_session():
             disclosures = await self._fetch_disclosures_json()
-        return {ticker.symbol: self._items_for_ticker(disclosures, ticker.symbol) for ticker in tickers}
+        grouped = {ticker.symbol: self._items_for_ticker(disclosures, ticker.symbol) for ticker in tickers}
+        logger.info(
+            "KAP: toplam %d bildirim, takip edilenler: %s",
+            len(disclosures), {symbol: len(items) for symbol, items in grouped.items()},
+        )
+        return grouped
 
     async def _fetch_disclosures_json(self) -> list[dict]:
         today = date.today()

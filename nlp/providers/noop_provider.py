@@ -18,6 +18,7 @@ from scrapers.models import CompanyReport, SynthesizedCompanyReport, Synthesized
 # bulletins) regularly exceed it, so it's truncated here rather than letting
 # pydantic validation fail on a perfectly normal title.
 _SUBHEADING_MAX_LENGTH = 100
+_NARRATIVE_MAX_LENGTH = 280
 
 
 class NoopProvider(SummarizerProvider):
@@ -46,6 +47,23 @@ class NoopProvider(SummarizerProvider):
 
         return SynthesizedSection(
             subheading=subheading,
-            narrative=item.body_snippet or item.title,
+            narrative=_lead(item.body_snippet) or item.title,
             source_urls=source_urls,
         )
+
+
+def _lead(body: str | None) -> str | None:
+    """First sentence or two of the body, capped at _NARRATIVE_MAX_LENGTH.
+    The whole body (up to 1500 chars of article text) used to be pasted in
+    as-is, which is what made the fallback mails unreadable walls of text
+    (2026-10-03)."""
+    if not body:
+        return None
+    text = " ".join(body.split())
+    if len(text) <= _NARRATIVE_MAX_LENGTH:
+        return text
+    cut = text[:_NARRATIVE_MAX_LENGTH]
+    sentence_end = cut.rfind(". ")
+    if sentence_end >= _NARRATIVE_MAX_LENGTH // 2:
+        return cut[: sentence_end + 1]
+    return cut.rstrip() + "…"

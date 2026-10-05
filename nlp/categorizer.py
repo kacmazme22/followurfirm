@@ -17,6 +17,7 @@ from config.constants import (
     KAP_KEYWORD_CATEGORY_MAP,
     NewsCategory,
 )
+from nlp.relevance import tr_lower
 from scrapers.models import NewsItem, RawScrapedItem
 
 
@@ -51,7 +52,7 @@ def categorize_batch(raw_items: list[RawScrapedItem]) -> list[NewsItem]:
 
 
 def _is_boilerplate(title: str) -> bool:
-    lowered = title.lower()
+    lowered = tr_lower(title)
     return any(pattern in lowered for pattern in BOILERPLATE_NOISE_PATTERNS)
 
 
@@ -69,7 +70,9 @@ def _determine_category(raw_item: RawScrapedItem) -> NewsCategory:
 
 
 def _match_keyword_category(text: str) -> NewsCategory | None:
-    lowered = text.lower()
+    # tr_lower, not str.lower(): the latter turns "İhale"/"İSTİFA" into
+    # "i̇hale"/"i̇sti̇fa" (dotted i + combining dot) and no keyword matched.
+    lowered = tr_lower(text)
     for keyword, category in KAP_KEYWORD_CATEGORY_MAP.items():
         if keyword in lowered:
             return category

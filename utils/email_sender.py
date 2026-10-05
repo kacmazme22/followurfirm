@@ -24,7 +24,13 @@ def build_digest_subject(settings: AppConfig, today: date | None = None) -> str:
     return settings.yaml.email.subject_template.format(date=today.strftime("%d.%m.%Y"))
 
 
-def send_digest_email(html_content: str, subject: str, recipients: list[str], settings: AppConfig) -> None:
+def send_digest_email(
+    html_content: str,
+    subject: str,
+    recipients: list[str],
+    settings: AppConfig,
+    text_content: str | None = None,
+) -> None:
     """Sends `html_content` as an HTML email. Raises RuntimeError (chained
     from the underlying smtplib/socket exception) on any connection or auth
     failure — never swallowed here, since whether that's worth a retry or
@@ -37,6 +43,10 @@ def send_digest_email(html_content: str, subject: str, recipients: list[str], se
     message["Subject"] = subject
     message["From"] = f"{settings.yaml.email.from_display_name} <{settings.env.smtp_username}>"
     message["To"] = ", ".join(recipients)
+    # multipart/alternative: clients show the LAST part they can render, so
+    # plain text goes first and HTML wins wherever HTML is supported.
+    if text_content:
+        message.attach(MIMEText(text_content, "plain", "utf-8"))
     message.attach(MIMEText(html_content, "html", "utf-8"))
 
     try:

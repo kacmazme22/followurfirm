@@ -32,6 +32,8 @@ from scrapers.models import RawScrapedItem
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_TIMEOUT = httpx.Timeout(25.0, connect=15.0)
+
 
 class ScraperResult(BaseModel):
     """What `BaseScraper.run()` returns. `main.py` reads `.error` to feed
@@ -96,7 +98,10 @@ class BaseScraper(ABC):
         bypasses run() to do one bulk request instead of one per ticker)."""
         owns_client = self._client is None
         if owns_client:
-            self._client = httpx.AsyncClient()
+            # httpx's 5s default read timeout failed every Google News feed
+            # on 2026-10-05 (ReadTimeout x4); feeds and article pages
+            # routinely take longer from GitHub's runners.
+            self._client = httpx.AsyncClient(timeout=DEFAULT_TIMEOUT)
         try:
             yield
         finally:

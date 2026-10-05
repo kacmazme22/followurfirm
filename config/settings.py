@@ -61,9 +61,25 @@ class BigparaSourceConfig(BaseModel):
 
 class GoogleNewsRssConfig(BaseModel):
     enabled: bool = True
-    query_template_tr: str = "{company_name} {ticker} hisse"
+    query_template_tr: str = "{company_name} {ticker} when:2d"
     language: str = "tr"
     country: str = "TR"
+
+
+class MarketBriefConfig(BaseModel):
+    """Headline-only Google News queries feeding the "Piyasa Gündemi" box
+    (nlp/market_brief.py). when:1d keeps each feed to the last day."""
+
+    enabled: bool = True
+    queries: list[str] = Field(default_factory=lambda: [
+        "Borsa İstanbul when:1d",
+        "TCMB faiz kararı when:1d",
+        "enflasyon TÜİK when:1d",
+        "BIST endeks değişikliği when:1d",
+        "Fed faiz piyasalar when:1d",
+        "SPK karar when:1d",
+    ])
+    max_headlines: int = 30
 
 
 class CompanyIrPagesConfig(BaseModel):
@@ -85,6 +101,7 @@ class SourcesConfig(BaseModel):
     kap: KapSourceConfig
     bigpara: BigparaSourceConfig
     google_news_rss: GoogleNewsRssConfig = Field(default_factory=GoogleNewsRssConfig)
+    market_brief: MarketBriefConfig = Field(default_factory=MarketBriefConfig)
     company_ir_pages: CompanyIrPagesConfig = Field(default_factory=CompanyIrPagesConfig)
     web_search_fallback: WebSearchFallbackConfig = Field(default_factory=WebSearchFallbackConfig)
     sec_edgar: GenericPhase2SourceConfig = Field(default_factory=GenericPhase2SourceConfig)

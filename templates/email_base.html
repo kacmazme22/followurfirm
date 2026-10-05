@@ -54,6 +54,25 @@
           </td>
         </tr>
         {% else %}
+        {% macro source_links(urls) -%}
+          {% for url in urls %}{% set u = url|string %}
+          <a href="{{ u }}" style="font-family:{{ colors.SANS }}; font-size:11px; color:{{ colors.C.cognac }}; text-decoration:none; white-space:nowrap;">{% if 'kap.org.tr' in u %}KAP{% elif 'bigpara' in u %}Bigpara{% else %}Haber{% endif %}&nbsp;&rarr;</a>{% if not loop.last %}<span style="color:{{ colors.C.border }}; margin:0 5px;">&middot;</span>{% endif %}
+          {% endfor %}
+        {%- endmacro %}
+        {% if digest_run.market_brief %}
+        <tr>
+          <td style="padding:24px 36px 4px;">
+            <div style="background-color:{{ colors.C.parchment }}; border-left:3px solid {{ colors.C.ink }}; padding:14px 18px;">
+              <div style="font-family:{{ colors.SANS }}; font-size:11px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:{{ colors.C.ink }}; padding-bottom:8px;">Piyasa Gündemi</div>
+              {% for section in digest_run.market_brief %}
+              <div style="font-family:{{ colors.SANS }}; font-size:13px; color:{{ colors.C.ink }}; line-height:1.5; padding:4px 0;">
+                <b>{{ section.subheading }}.</b> {{ section.narrative }} {{ source_links(section.source_urls) }}
+              </div>
+              {% endfor %}
+            </div>
+          </td>
+        </tr>
+        {% endif %}
         <tr>
           <td style="padding:28px 36px;">
             {% for report in digest_run.company_reports %}
@@ -76,38 +95,27 @@
                 Bugün {{ report.ticker }} için yeni bir gelişme yok.
               </div>
               {% else %}
-                {% for category, sections in report.ordered_sections() %}
-                {% set cat_color = colors.CATEGORY_COLORS[category.value] %}
+                {% if report.summary %}
+                <div style="padding:10px 0 4px; font-family:{{ colors.SERIF }}; font-size:14px; font-style:italic; color:{{ colors.C.ink }}; line-height:1.45;">
+                  <b style="font-style:normal;">Kısaca:</b> {{ report.summary }}
+                </div>
+                {% endif %}
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                  <tr>
-                    <td colspan="2" style="padding:10px 0 6px; font-family:{{ colors.SANS }}; font-size:13px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:{{ cat_color }};">
-                      <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background-color:{{ cat_color }}; vertical-align:middle; margin-right:6px;"></span>{{ category.display_name_tr }}
-                    </td>
-                  </tr>
+                  {% for category, sections in report.ordered_sections() %}
+                  {% set cat_color = colors.CATEGORY_COLORS[category.value] %}
                   {% for section in sections %}
-                  <tr style="border-bottom:1px solid {{ colors.C.sand }};">
-                    <td style="padding:12px 0; width:12px; vertical-align:top; text-align:center;">
-                      <span style="display:inline-block; width:9px; height:9px; border-radius:50%; background-color:{{ cat_color }}; vertical-align:middle;"></span>
+                  <tr>
+                    <td title="{{ category.display_name_tr }}" style="padding:9px 0; width:12px; vertical-align:top; text-align:center;">
+                      <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:{{ cat_color }}; margin-top:5px;"></span>
                     </td>
-                    <td style="padding:12px 0 12px 10px; vertical-align:top;">
-                      <div style="font-family:{{ colors.SERIF }}; font-size:15px; color:{{ colors.C.ink }}; margin-bottom:4px;">
-                        {{ section.subheading }}
-                      </div>
-                      <div style="font-family:{{ colors.SANS }}; font-size:13px; color:{{ colors.C.sepia }}; line-height:1.45;">
-                        {{ section.narrative }}
-                      </div>
-                      {% if section.source_urls %}
-                      <div style="margin-top:6px;">
-                        {% for url in section.source_urls %}
-                        <a href="{{ url }}" style="font-family:{{ colors.SANS }}; font-size:11px; color:{{ colors.C.cognac }}; text-decoration:none;">Kaynak {{ loop.index }} &rarr;</a>{% if not loop.last %}<span style="color:{{ colors.C.border }}; margin:0 6px;">&middot;</span>{% endif %}
-                        {% endfor %}
-                      </div>
-                      {% endif %}
+                    <td style="padding:8px 0 8px 10px; vertical-align:top; border-bottom:1px solid {{ colors.C.sand }}; font-family:{{ colors.SANS }}; font-size:13px; color:{{ colors.C.ink }}; line-height:1.5;">
+                      <b>{{ section.subheading }}.</b>{% if section.narrative != section.subheading %} {{ section.narrative }}{% endif %}
+                      {% if section.source_urls %}<span style="margin-left:4px;">{{ source_links(section.source_urls) }}</span>{% endif %}
                     </td>
                   </tr>
                   {% endfor %}
+                  {% endfor %}
                 </table>
-                {% endfor %}
               {% endif %}
             </div>
             {% endfor %}
