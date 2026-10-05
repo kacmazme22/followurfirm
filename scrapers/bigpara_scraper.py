@@ -62,6 +62,9 @@ TITLE_SELECTOR = "a.news-card__title"
 INFO_SELECTOR = "div.news-card__info"
 INFO_SEPARATOR = "･"
 
+KAP_MIRROR_PATH = "/kap-haberleri/"
+MAX_KAP_MIRROR_TO_ENRICH = 10
+
 # Matches "3 dk önce", "2 saat önce", "1 gün önce", "3 ay önce", "1 yıl
 # önce", etc. Unit spelled out ("dakika"/"saat") or abbreviated ("dk"/"sa")
 # — both observed live, as are all of gün/ay/yıl.
@@ -165,7 +168,7 @@ class BigparaScraper(BaseScraper):
         so a plain slice picks the most recent ones."""
         enriched = 0
         failed = 0
-        for item in items[:MAX_ARTICLES_TO_ENRICH_PER_TICKER]:
+        for item in self._enrichment_order(items):
             if not item.raw_url:
                 continue
             body = await fetch_article_body(self, item.raw_url, is_google_news=False)
@@ -179,6 +182,18 @@ class BigparaScraper(BaseScraper):
             "%s: %d haber zenginleştirildi, %d'si başarısız/boş döndü",
             self.ticker.symbol, enriched, failed,
         )
+
+    @staticmethod
+    def _enrichment_order(items: list[RawScrapedItem]) -> list[RawScrapedItem]:
+        """Bigpara's "kap-haberleri" pages carry the full text of KAP
+        disclosures (form fields, amounts, the explanation paragraph) and,
+        unlike kap.org.tr, are reachable from GitHub's runners (KAP timed
+        out 3/3 on 2026-10-05). They're the digest's most valuable bodies, so
+        every one of them is enriched first and doesn't count against the
+        cap for ordinary news."""
+        kap_mirror = [i for i in items if i.raw_url and KAP_MIRROR_PATH in i.raw_url]
+        others = [i for i in items if i not in kap_mirror]
+        return kap_mirror[:MAX_KAP_MIRROR_TO_ENRICH] + others[:MAX_ARTICLES_TO_ENRICH_PER_TICKER]
 
     @staticmethod
     def _extract_relative_time(info_el) -> str | None:

@@ -79,7 +79,7 @@ class MarketBriefConfig(BaseModel):
         "Fed faiz piyasalar when:1d",
         "SPK karar when:1d",
     ])
-    max_headlines: int = 40
+    max_headlines: int = 30
 
 
 class CompanyIrPagesConfig(BaseModel):

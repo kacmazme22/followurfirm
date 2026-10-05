@@ -1,17 +1,24 @@
 # Runs main.py on a schedule: scrape -> categorize -> dedup -> LLM synthesis
-# -> render -> email. The cron value below mirrors config/config.yaml's
+# -> render -> email. The first cron value below mirrors config/config.yaml's
 # `schedule.cron_utc` — if that value changes, update it here too, GitHub
 # Actions can't read config.yaml for its own trigger.
 #
-# Why minute 17 and not 0: GitHub queues every repo's "0 * * * *" jobs at the
-# same instant, and runs scheduled at 05:00 UTC were actually starting
-# 5-6 hours late (10:05-11:53 UTC, late Sept/early Oct 2026). An off-peak
-# minute is GitHub's own documented mitigation; it is not a guarantee.
+# Reliability, in order of what has actually gone wrong:
+#   - Scheduled runs start late (05:00 UTC runs started 10:05-11:53 UTC in
+#     late Sept/early Oct 2026) and can be dropped outright under load.
+#     Minute 17 is GitHub's own documented mitigation, not a guarantee.
+#   - Queued jobs were cancelled after 15 minutes without ever getting a
+#     runner (2026-10-05, twice).
+# So there are several triggers — two crons here plus, optionally, an
+# external scheduler calling workflow_dispatch at an exact time (README) —
+# and a once-per-day guard: the first run that sends the mail records it in
+# the Actions cache, and every later trigger that day exits in seconds.
 name: Daily Digest
 
 on:
   schedule:
     - cron: "17 4 * * *"   # 07:17 Europe/Istanbul
+    - cron: "13 6 * * *"   # 09:13 Europe/Istanbul, backup if the first was dropped
   workflow_dispatch:
     inputs:
       dry_run:
@@ -23,6 +30,10 @@ on:
         type: choice
         options: [groq, noop]
         default: groq
+      force:
+        description: "Bugün zaten gönderildiyse bile tekrar gönder"
+        type: boolean
+        default: false
 
 concurrency:
   group: daily-digest-${{ github.ref }}
@@ -33,9 +44,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - name: Once-per-day key
+        id: day
+        run: echo "key=digest-sent-$(TZ=Europe/Istanbul date +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether today's digest was already sent
+        id: sent
+        uses: actions/cache/restore@v4
+        with:
+          path: .digest-sent
+          key: ${{ steps.day.outputs.key }}
+          lookup-only: true
+
+      - name: Decide
+        id: guard
+        run: |
+          if [ "${{ steps.sent.outputs.cache-hit }}" = "true" ] && [ "${{ inputs.dry_run }}" != "true" ] && [ "${{ inputs.force }}" != "true" ]; then
+            echo "Bugünün bülteni zaten gönderildi, bu tetikleme atlanıyor."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v5
+        if: steps.guard.outputs.skip != 'true'
 
       - uses: actions/setup-python@v6
+        if: steps.guard.outputs.skip != 'true'
         with:
           python-version: "3.11"
           cache: pip
@@ -43,9 +76,23 @@ jobs:
       # constraints.txt freezes last-verified versions so an upstream release
       # can't break the morning run (see the selectolax note in requirements.txt).
       - name: Install dependencies
+        if: steps.guard.outputs.skip != 'true'
         run: pip install -r requirements.txt -c constraints.txt
 
+      # One line per run on whether KAP answers from this runner: it timed
+      # out 3/3 from GitHub's (US) runners on 2026-10-05 but worked on
+      # 2026-10-03. Cheap evidence for deciding on a Turkish runner/proxy.
+      - name: Source reachability
+        if: steps.guard.outputs.skip != 'true'
+        continue-on-error: true
+        run: |
+          echo "runner country: $(curl -s --max-time 10 https://ipinfo.io/country || echo '?')"
+          for url in https://www.kap.org.tr/tr https://bigpara.hurriyet.com.tr/; do
+            curl -s -o /dev/null --max-time 20 -w "$url -> HTTP %{http_code}, connect %{time_connect}s\n" "$url" || echo "$url -> unreachable"
+          done
+
       - name: Run digest pipeline
+        if: steps.guard.outputs.skip != 'true'
         env:
           # Scheduled runs have no inputs: use Groq whenever its key is set,
           # otherwise degrade to the raw-list digest instead of failing.
@@ -57,12 +104,23 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python main.py
 
+      - name: Record today's digest as sent
+        if: steps.guard.outputs.skip != 'true' && success() && inputs.dry_run != true
+        run: date -u > .digest-sent
+
+      - name: Save once-per-day marker
+        if: steps.guard.outputs.skip != 'true' && success() && inputs.dry_run != true
+        uses: actions/cache/save@v4
+        with:
+          path: .digest-sent
+          key: ${{ steps.day.outputs.key }}
+
       - name: Print digest (plain text)
-        if: always()
+        if: always() && steps.guard.outputs.skip != 'true'
         run: cat output/*.txt 2>/dev/null || echo "Bülten üretilmedi."
 
       - name: Upload generated digest
-        if: always()
+        if: always() && steps.guard.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: digest-output

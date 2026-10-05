@@ -77,3 +77,18 @@ def test_kisaca_is_read_from_whole_report_response():
     completions.create = create_with_kisaca
     result = asyncio.run(provider.summarize_company_report(_report(1, 0)))
     assert result.summary == "58,6 mn $'lık sözleşme imzalandı."
+
+
+def test_source_ids_are_mapped_back_to_urls():
+    provider, completions = _provider([
+        {"category": "finansal_sonuclar", "subheading": "Temettü", "narrative": "x", "source_ids": [2, 2, 99, "a"]},
+    ])
+    report = CompanyReport(ticker="GUBRF", company_name="Gübretaş")
+    report.add_item(NewsItem(ticker="GUBRF", title="A", source=SourceType.BIGPARA, url="https://a.example/1", category=NewsCategory.FINANCIALS))
+    report.add_item(NewsItem(ticker="GUBRF", title="B", source=SourceType.KAP, url="https://www.kap.org.tr/tr/Bildirim/2", category=NewsCategory.FINANCIALS))
+    result = asyncio.run(provider.summarize_company_report(report))
+
+    section = result.sections_by_category[NewsCategory.FINANCIALS][0]
+    assert [str(u) for u in section.source_urls] == ["https://www.kap.org.tr/tr/Bildirim/2"]
+    # URLs are no longer sent to the model at all.
+    assert "https://" not in completions.prompts[0]
