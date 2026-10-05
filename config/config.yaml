@@ -34,7 +34,7 @@ recipients:
   - "ediz.kacmaz19@gmail.com"
 
 schedule:
-  cron_utc: "0 5 * * *"   # 08:00 Europe/Istanbul (UTC+3), adjust for DST manually if needed
+  cron_utc: "17 4 * * *"   # 07:17 Europe/Istanbul (UTC+3); off-minute on purpose, see daily_digest.yml
   timezone_display: "Europe/Istanbul"
 
 sources:
@@ -63,7 +63,10 @@ sources:
   google_news_rss:
     enabled: true
     # {ticker} and {company_name} are substituted at request time.
-    query_template_tr: "{company_name} {ticker} hisse"
+    # `when:2d` is Google News' own recency operator: without it the feed's
+    # 100-item cap filled up with months-old articles and the 36h filter in
+    # google_news_scraper.py then dropped all 100 (KCHOL/AKBNK, 2026-10-03).
+    query_template_tr: "{company_name} {ticker} when:2d"
     language: "tr"
     country: "TR"
 

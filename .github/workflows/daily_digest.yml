@@ -1,38 +1,68 @@
-# Runs main.py on a schedule: scrape -> categorize -> dedup -> render ->
-# email. The cron value below mirrors config/config.yaml's
-# `schedule.cron_utc` ("0 5 * * *" = 08:00 Europe/Istanbul) — if that value
-# changes, update it here too, GitHub Actions can't read config.yaml for its
-# own trigger.
+# Runs main.py on a schedule: scrape -> categorize -> dedup -> LLM synthesis
+# -> render -> email. The cron value below mirrors config/config.yaml's
+# `schedule.cron_utc` — if that value changes, update it here too, GitHub
+# Actions can't read config.yaml for its own trigger.
+#
+# Why minute 17 and not 0: GitHub queues every repo's "0 * * * *" jobs at the
+# same instant, and runs scheduled at 05:00 UTC were actually starting
+# 5-6 hours late (10:05-11:53 UTC, late Sept/early Oct 2026). An off-peak
+# minute is GitHub's own documented mitigation; it is not a guarantee.
 name: Daily Digest
 
 on:
   schedule:
-    - cron: "0 5 * * *"
-  workflow_dispatch: {}
+    - cron: "17 4 * * *"   # 07:17 Europe/Istanbul
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Kuru çalıştırma: bülteni üret ve loga yaz, e-posta GÖNDERME"
+        type: boolean
+        default: true
+      ai_provider:
+        description: "Özetleyici (groq = LLM sentezi, noop = ham liste)"
+        type: choice
+        options: [groq, noop]
+        default: groq
+
+concurrency:
+  group: daily-digest-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   run-digest:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+          cache: pip
 
+      # constraints.txt freezes last-verified versions so an upstream release
+      # can't break the morning run (see the selectolax note in requirements.txt).
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt -c constraints.txt
 
       - name: Run digest pipeline
         env:
-          AI_PROVIDER: noop
-          DRY_RUN: "false"
+          # Scheduled runs have no inputs: use Groq whenever its key is set,
+          # otherwise degrade to the raw-list digest instead of failing.
+          AI_PROVIDER: ${{ inputs.ai_provider || (secrets.GROQ_API_KEY != '' && 'groq' || 'noop') }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+          ENVIRONMENT: ci
           SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python main.py
 
-      - name: Upload generated digest HTML
+      - name: Print digest (plain text)
+        if: always()
+        run: cat output/*.txt 2>/dev/null || echo "Bülten üretilmedi."
+
+      - name: Upload generated digest
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: digest-output

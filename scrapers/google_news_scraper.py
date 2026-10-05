@@ -31,6 +31,7 @@ import feedparser
 from config.constants import MAX_ARTICLES_TO_ENRICH_PER_TICKER, NEWS_LOOKBACK_HOURS, SourceType
 from config.settings import GoogleNewsRssConfig, PolitenessConfig, TickerConfig
 from scrapers.base import BaseScraper
+from nlp.relevance import filter_relevant
 from scrapers.models import RawScrapedItem
 from utils.article_fetcher import fetch_article_body
 
@@ -101,6 +102,7 @@ class GoogleNewsScraper(BaseScraper):
             self.ticker.symbol, len(feed.entries), skipped,
         )
 
+        items = filter_relevant(items, self.ticker)
         await self._enrich_with_article_bodies(items)
         # An empty feed (0 results) is a normal outcome, not an error —
         # returning an empty list here, no exception.

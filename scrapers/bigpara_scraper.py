@@ -46,6 +46,7 @@ from bs4 import BeautifulSoup
 from config.constants import MAX_ARTICLES_TO_ENRICH_PER_TICKER, NEWS_LOOKBACK_HOURS, SourceType
 from config.settings import BigparaSourceConfig, TickerConfig
 from scrapers.base import BaseScraper
+from nlp.relevance import filter_relevant
 from scrapers.models import RawScrapedItem
 from utils.article_fetcher import fetch_article_body
 
@@ -152,6 +153,7 @@ class BigparaScraper(BaseScraper):
             self.ticker.symbol, len(cards), skipped,
         )
 
+        items = filter_relevant(items, self.ticker)
         await self._enrich_with_article_bodies(items)
         # No news cards on the page is a normal outcome, not an error.
         return items

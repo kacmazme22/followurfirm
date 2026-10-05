@@ -61,7 +61,7 @@ class BigparaSourceConfig(BaseModel):
 
 class GoogleNewsRssConfig(BaseModel):
     enabled: bool = True
-    query_template_tr: str = "{company_name} {ticker} hisse"
+    query_template_tr: str = "{company_name} {ticker} when:2d"
     language: str = "tr"
     country: str = "TR"
 

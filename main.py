@@ -86,6 +86,11 @@ async def _build_company_report(
     report = CompanyReport(ticker=ticker.symbol, company_name=ticker.name)
     for item in news_items:
         report.add_item(item)
+    logger.info(
+        "%s: %d haber (%s) özetlemeye gidiyor",
+        ticker.symbol, report.total_items,
+        ", ".join(f"{cat.value}={len(items)}" for cat, items in report.ordered_categories()) or "boş",
+    )
 
     provider = get_provider(settings)
     try:
@@ -119,6 +124,31 @@ async def run_pipeline() -> DigestRun:
     return digest_run
 
 
+def render_digest_text(digest_run: DigestRun) -> str:
+    """Plain-text twin of the HTML digest. Sent as the email's text/plain
+    alternative (HTML-only mail scores worse with spam filters) and printed
+    in the workflow log, so a run's content can be read straight from the
+    Actions page without downloading the artifact."""
+    lines = [f"FollowUrFirm Digest — {digest_run.run_date.strftime('%d.%m.%Y %H:%M')} UTC", ""]
+    for report in digest_run.company_reports:
+        lines.append(f"== {report.ticker} — {report.company_name} ==")
+        if report.is_empty():
+            lines += ["Bugün yeni bir gelişme yok.", ""]
+            continue
+        for category, sections in report.ordered_sections():
+            lines.append(f"[{category.display_name_tr}]")
+            for section in sections:
+                lines.append(f"* {section.subheading}")
+                if section.narrative != section.subheading:
+                    lines.append(f"  {section.narrative}")
+                lines += [f"  -> {url}" for url in section.source_urls]
+            lines.append("")
+    if digest_run.errors:
+        lines.append("Uyarılar:")
+        lines += [f"- {error}" for error in digest_run.errors]
+    return "\n".join(lines)
+
+
 def render_digest_html(digest_run: DigestRun) -> str:
     env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
     template = env.get_template("email_base.html")
@@ -134,11 +164,13 @@ if __name__ == "__main__":
 
     result = asyncio.run(run_pipeline())
     rendered_html = render_digest_html(result)
+    rendered_text = render_digest_text(result)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     output_path = OUTPUT_DIR / f"digest_{date.today().isoformat()}.html"
     output_path.write_text(rendered_html, encoding="utf-8")
+    output_path.with_suffix(".txt").write_text(rendered_text, encoding="utf-8")
     print(f"Digest written to {output_path}")
 
     subject = build_digest_subject(settings)
-    send_digest_email(rendered_html, subject, settings.yaml.recipients, settings)
+    send_digest_email(rendered_html, subject, settings.yaml.recipients, settings, text_content=rendered_text)

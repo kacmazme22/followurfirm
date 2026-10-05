@@ -12,3 +12,7 @@ tenacity>=8.3    # retry/backoff helper used sparingly per politeness rules
 groq>=1.6        # nlp/providers/groq_provider.py, only used when AI_PROVIDER=groq
 trafilatura>=2.2        # utils/article_fetcher.py — real article body extraction
 googlenewsdecoder>=0.1.7  # utils/article_fetcher.py — resolves Google News RSS redirect tokens
+# selectolax 1.0 (2026-10) removed the `selectolax.parser` (Modest) backend
+# that googlenewsdecoder still imports — unpinned, it crashed every run at
+# import time. Drop this pin once googlenewsdecoder moves to selectolax.lexbor.
+selectolax<1.0

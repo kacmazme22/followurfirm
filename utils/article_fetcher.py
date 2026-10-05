@@ -26,11 +26,21 @@ import asyncio
 import logging
 
 import trafilatura
-from googlenewsdecoder import gnewsdecoder
 
 from scrapers.base import BaseScraper
 
 logger = logging.getLogger(__name__)
+
+# Imported defensively: googlenewsdecoder is a small reverse-engineering
+# package with fragile transitive deps (2026-10-04: selectolax 1.0 removed a
+# backend it imports, and the module-level ImportError killed main.py before
+# a single ticker ran). Without it we only lose Google News body enrichment —
+# headlines still flow — so a broken install must never take the digest down.
+try:
+    from googlenewsdecoder import gnewsdecoder
+except Exception as _import_exc:  # ImportError, or anything its own imports raise
+    gnewsdecoder = None
+    logger.warning("googlenewsdecoder yüklenemedi, Google News gövde zenginleştirmesi kapalı: %s", _import_exc)
 
 # NewsItem.body_snippet (scrapers/models.py) caps at max_length=2000 —
 # trimmed well under that so truncation never collides with the field's own
@@ -48,6 +58,8 @@ async def fetch_article_body(scraper: BaseScraper, url: str, is_google_news: boo
     target_url = url
 
     if is_google_news:
+        if gnewsdecoder is None:
+            return None
         try:
             decoded = await asyncio.to_thread(gnewsdecoder, url, interval=1)
         except Exception as exc:
