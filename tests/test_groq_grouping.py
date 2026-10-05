@@ -61,3 +61,19 @@ def test_large_report_falls_back_to_per_category_calls():
 
     assert len(completions.prompts) > 1
     assert all("ön-kategori" not in p for p in completions.prompts)
+
+
+def test_kisaca_is_read_from_whole_report_response():
+    provider, completions = _provider([{"category": "yeni_is_iliskileri", "subheading": "Yeni iş", "narrative": "x"}])
+    completions_create = completions.create
+
+    async def create_with_kisaca(**kwargs):
+        response = await completions_create(**kwargs)
+        payload = json.loads(response.choices[0].message.content)
+        payload["kisaca"] = "  58,6 mn $'lık sözleşme imzalandı.  "
+        response.choices[0].message.content = json.dumps(payload)
+        return response
+
+    completions.create = create_with_kisaca
+    result = asyncio.run(provider.summarize_company_report(_report(1, 0)))
+    assert result.summary == "58,6 mn $'lık sözleşme imzalandı."

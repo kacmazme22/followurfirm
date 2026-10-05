@@ -76,6 +76,16 @@ _MARKET_NOISE_PATTERNS = [
         r"kurum(dan|lardan) (gelen )?(alım|satış)",
         r"(model|döngüsel) portföy",
         r"portföy ağırlı",
+        # Quote/forum pages Google News indexes as "news": "YEO TEKNOLOJI
+        # ENERJI (YEOTK) Hisse Senedi", "YEOTK Hisse Yorumları".
+        r"hisse senedi$",
+        r"hisse (yorumları|fiyatı|grafiği|detay)",
+        r"güncel yorumlar",
+        # Bigpara relays of market-infrastructure notices that list the
+        # ticker among others (MKK share-type conversions, BIST index lists).
+        r"merkezi kayıt kuruluşu",
+        r"borsa istanbul a\.ş",
+        r"pay endeksleri",
         # Price-move reports: "Akbank hisseleri yüzde 3 yükseldi", "KCHOL
         # payları %2 değer kaybetti". Requires the hisse/pay subject so an
         # earnings headline ("net kârı yüzde 30 arttı") isn't dropped.
@@ -90,6 +100,19 @@ _GENERIC_NAME_WORDS = {
     "a.ş.", "aş", "a.s.", "as", "t.a.ş.", "holding", "sanayi", "ve", "ticaret",
     "fabrikaları", "teknoloji", "bankası", "yatırım", "enerji", "grup", "group",
 }
+
+
+def clean_title(title: str) -> str:
+    """Bigpara wraps tickers in asterisks and relayed headlines in a ticker
+    prefix: "***KCHOL*** (*Koç Holding YKB Vekili Ali Koç: ...)" and
+    "***ESCOM* *AKYHO* *HATSN*...". Strip the asterisks (they also hid
+    multi-stock lists from _MULTI_TICKER_RE) and unwrap the parenthesised
+    headline so the reader sees "Koç Holding YKB Vekili Ali Koç: ..."."""
+    text = re.sub(r"\s+", " ", title.replace("*", " ")).strip()
+    wrapped = re.match(rf"^{_TICKER_TOKEN}\s*\((.+?)\)?$", text)
+    if wrapped and len(wrapped.group(1)) > 15:
+        text = wrapped.group(1).strip()
+    return text
 
 
 def tr_lower(text: str) -> str:
@@ -122,7 +145,11 @@ def is_multi_ticker_list(title: str) -> bool:
     return _MULTI_TICKER_RE.search(title) is not None
 
 
-def is_market_noise(title: str) -> bool:
+def is_market_noise(title: str, url: str | None = None) -> bool:
+    # Bigpara files broker morning notes under ".../araci-kurum-raporlari/
+    # analiz-gunluk-bulten-...": market-wide by construction.
+    if url and "/analiz-" in url:
+        return True
     lowered = tr_lower(title)
     return any(p.search(lowered) for p in _MARKET_NOISE_PATTERNS)
 
@@ -133,11 +160,14 @@ def filter_relevant(items: list[RawScrapedItem], ticker: TickerConfig) -> list[R
     dropped_multi = dropped_noise = dropped_unrelated = 0
 
     for item in items:
+        if item.source != SourceType.KAP:
+            item.raw_title = clean_title(item.raw_title)
+
         if item.source == SourceType.KAP:
             kept.append(item)
         elif is_multi_ticker_list(item.raw_title):
             dropped_multi += 1
-        elif is_market_noise(item.raw_title):
+        elif is_market_noise(item.raw_title, item.raw_url):
             dropped_noise += 1
         elif not _mentions_company(item.raw_title, keywords):
             dropped_unrelated += 1

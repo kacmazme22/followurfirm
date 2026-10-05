@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
 import trafilatura
 
@@ -46,6 +47,42 @@ except Exception as _import_exc:  # ImportError, or anything its own imports rai
 # trimmed well under that so truncation never collides with the field's own
 # validation limit.
 MAX_BODY_SNIPPET_CHARS = 1500
+
+# What's left after cleaning must be at least this long to count as an
+# article; shorter means trafilatura only found site chrome.
+MIN_BODY_CHARS = 120
+
+# Site chrome trafilatura picked up instead of the article (2026-10-03 mail:
+# every KCHOL Bigpara item's "summary" was the Hürriyet footer). A line
+# containing any of these is dropped.
+_CHROME_MARKERS = (
+    "en çok arananlar",
+    "copyright",
+    "kullanım koşulları",
+    "gizlilik politika",
+    "login olduğunuz",
+    "sıralamayı değiştirmek",
+    "bist 100 dolar euro",
+    "bildirimler bildirimler",
+)
+
+# Everything from here on is the broker/portal legal disclaimer
+# ("Burada yer alan yatırım bilgi, yorum ve tavsiyeleri...").
+_DISCLAIMER_START = re.compile(r"burada yer alan yatırım bilgi|yatırım danışmanlığı kapsamında değildir", re.IGNORECASE)
+
+
+def clean_article_text(text: str) -> str | None:
+    """Drops site-chrome lines and the trailing legal disclaimer; None if
+    nothing article-like is left."""
+    match = _DISCLAIMER_START.search(text)
+    if match:
+        text = text[: match.start()]
+    lines = [
+        line.strip() for line in text.splitlines()
+        if line.strip() and not any(marker in line.lower() for marker in _CHROME_MARKERS)
+    ]
+    cleaned = "\n".join(lines).replace("*", "").strip()
+    return cleaned if len(cleaned) >= MIN_BODY_CHARS else None
 
 
 async def fetch_article_body(scraper: BaseScraper, url: str, is_google_news: bool) -> str | None:
@@ -90,4 +127,8 @@ async def fetch_article_body(scraper: BaseScraper, url: str, is_google_news: boo
         logger.info("trafilatura extracted no text from %s (HTTP %s)", target_url, response.status_code)
         return None
 
-    return extracted[:MAX_BODY_SNIPPET_CHARS]
+    cleaned = clean_article_text(extracted)
+    if cleaned is None:
+        logger.info("Only site chrome/disclaimer extracted from %s", target_url)
+        return None
+    return cleaned[:MAX_BODY_SNIPPET_CHARS]

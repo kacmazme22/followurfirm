@@ -135,6 +135,11 @@ BOILERPLATE_NOISE_PATTERNS: list[str] = [
     "kurumsal yönetim uyum",
     "sürdürülebilirlik uyum",
     "kurumsal yönetim bilgi formu",
+    # Market-infrastructure notices that KAP tags with the ticker but that
+    # say nothing about the business (2026-10-03 mail: YEOTK, GUBRF).
+    "borsada işlem gören tipe dönüşüm",
+    "işlem yasağı nedeniyle",
+    "pay endeksleri",
 ]
 
 DEFAULT_CATEGORY = NewsCategory.GENERAL_SECTOR

@@ -182,6 +182,8 @@ class SynthesizedCompanyReport(BaseModel):
 
     ticker: str
     company_name: str
+    # One-sentence "Kısaca:" lede over the day's sections (LLM only).
+    summary: str | None = None
     sections_by_category: dict[NewsCategory, list[SynthesizedSection]] = Field(default_factory=dict)
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -204,6 +206,8 @@ class DigestRun(BaseModel):
     handed to the email renderer."""
 
     run_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # "Piyasa Gündemi" bullets shown above the company sections.
+    market_brief: list[SynthesizedSection] = Field(default_factory=list)
     company_reports: list[SynthesizedCompanyReport] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)  # graceful-degradation log surfaced in footer/logs
 
@@ -213,4 +217,4 @@ class DigestRun(BaseModel):
 
     @property
     def has_any_content(self) -> bool:
-        return any(not r.is_empty() for r in self.company_reports)
+        return bool(self.market_brief) or any(not r.is_empty() for r in self.company_reports)

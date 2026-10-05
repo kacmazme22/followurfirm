@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import NamedTuple
 
 import groq
 from groq import AsyncGroq
@@ -114,12 +115,18 @@ def _parse_category(code: str | None) -> NewsCategory:
         return NewsCategory.GENERAL_SECTOR
 
 
-SYSTEM_PROMPT = """Sen bir finansal haber editörüsün. Sana bir hisse senedi için toplanmış ham haber başlıkları, özetleri ve linkleri verilecek. Görevin:
-1. Aynı olayı anlatan haberleri birleştirip TEK bir anlatıya dönüştürmek.
-2. Önemsiz/tekrarcı haberleri atlamak, sadece bilgi değeri olanları kullanmak.
-3. Kendi mantıklı alt-başlıklarını üretmek — sabit bir liste yok, sen karar ver.
-4. Her paragrafı hangi haberlerin desteklediğini URL olarak belirtmek.
-5. Türkçe, akıcı, gazetecilik diliyle yaz.
+SYSTEM_PROMPT = """Sen bir aracı kurum araştırma bülteninin editörüsün. Okuyucu, hisselerini takip eden uzun vadeli bir yatırımcı; sabah birkaç dakikada şirketlerinde ne olduğunu öğrenmek istiyor. Sana bir hisse için toplanmış ham haberler, özetleri ve linkleri verilecek. Görevin:
+1. Aynı olayı anlatan haberleri birleştirip TEK maddeye dönüştürmek.
+2. Önemsiz/tekrarcı haberleri atlamak, sadece yatırımcıya bilgi veren olayları kullanmak.
+3. Her maddeyi hangi haberlerin desteklediğini URL olarak belirtmek.
+
+YAZIM FORMATI (kısa ve yoğun — ham metni ASLA kopyalama, işle):
+- subheading: 1-3 kelimelik olay etiketi, ör. "Yeni iş", "Geri alım", "Temettü", "Varlık satışı", "Satın alma", "Yatırım", "Finansal sonuç", "Borçlanma", "Yönetim", "Ortaklık yapısı", "Patent", "Analist görüşü", "Dava".
+- narrative: EN FAZLA 2 cümle, toplam ~45 kelime. Önce olay ve büyüklüğü (tutar, adet, oran, fiyat aralığı, karşı taraf, tarih), sonra varsa tek bir kritik detay (vade, finansman, devreye alma, kârın kullanımı). Örnek:
+  "Azerenerji (Azerbaycan) ile 250 MWh batarya depolama tesisi için 58,6 mn $'lık EPC-F sözleşmesi imzalandı. Finansman 4 yıl geri ödemeli, tesis 1 yıl içinde devreye girecek."
+  "5 Ekim'de 4,76-4,82 TL aralığından 456.517 pay geri alındı; toplam geri alınan pay 1,60 mn adede (%0,142) ulaştı."
+- Büyük tutarları kısalt: 58.600.000 dolar -> 58,6 mn $; 1.500.000.000 TL -> 1,5 mlr TL.
+- "Şirketimiz", "kamuoyuna duyurulur", "olumlu etki" gibi bildirim dilini ve form alanlarını (güncelleme mi, düzeltme mi, ertelenmiş mi) yazma.
 
 KRİTİK KURALLAR (ihlal edilemez):
 - SADECE sana verilen ham metinde geçen isim, kurum, rakam ve olayları kullan. Hiçbir ek bilgi, kurum ismi, kişi ismi veya rakam UYDURMA.
@@ -135,6 +142,7 @@ KRİTİK KURALLAR (ihlal edilemez):
 - Her section'da önce NE oldu, sonra kaynakta dayanağı varsa yatırımcı için önemini (büyüklüğü, ciroya/kâra etkisi, takvimi) yaz. Kaynakta dayanağı yoksa önem cümlesi YAZMA: "dikkat çekecek", "potansiyel etkileri olabilir", "önem taşımaktadır", "güçlendirilmesi açısından" gibi içi boş kapanış cümleleri YASAK.
 - DIŞLA: prosedürel/periyodik KAP içeriği — kurumsal yönetim veya sürdürülebilirlik uyum raporları, yönetim kurulu toplantı/katılım istatistikleri, komite listeleri, "bu açıklama düzeltme/erteleme değildir" gibi form alanları. Bir atama/karar haberi varsa sadece kimin hangi göreve geldiğini yaz, mevzuat madde numaralarını yazma.
 - DIŞLA: blok/kurumsal alım-satım akışı ("X kurumdan yüklü satış"), aracı kurumların model portföy ağırlık değişiklikleri ve takas/aracı kurum dağılımı — bunlar şirketin işine dair değil, hisse akışına dair.
+- DIŞLA: yöneticilerin konferans/röportaj sözleri ve genel görüşleri (ör. "yapay zekâ büyük fırsatlar getiriyor") — şirkete dair somut bir karar, rakam veya hedef içermiyorsa.
 - Birden çok şirketi kapsayan bir rapordan (ör. sektör raporu) sadece bu hisseye dair kısmı al; diğer şirketlerin hedef fiyat ve tavsiyelerini yazma.
 - Eğer bir madde sadece fiyat, hacim, oran, günlük değişim, açığa satış miktarı gibi ham veriden oluşuyorsa, onu hiçbir şekilde section yapma; tamamen atla. Eğer aynı madde yorum/bağlam da taşıyorsa, yalnızca şirketin işine dair kısmını koru, fiyat ve teknik verileri sil.
 - Hiçbir madde bu kriterleri karşılamıyorsa {"sections": []} döndür — boş bölüm, dolgu metinden iyidir.
@@ -153,12 +161,34 @@ URL YAZIM KURALI:
 
 KAP AÇIKLAMALARINI ÖZETLERKEN DERİNLİK KURALI:
 - KAP açıklamalarını asla "şirket KAP üzerinden bir açıklama paylaştı" gibi yüzeysel şekilde geçme.
-- Kaynak metinde somut rakam, taraf, tutar, tarih, amaç, kur, proje, kurum veya koşul varsa, bunların TAMAMINI paragraf içinde kullan.
+- Kaynak metinde somut rakam, taraf, tutar, tarih, amaç, kur, proje, kurum veya koşul varsa, yatırımcı için en önemli olanları (2 cümle sınırı içinde) mutlaka kullan.
 - Örnek: bir kredi anlaşması haberinde sadece "kredi kullanıldı" demek yeterli değil; kredinin tutarını, para birimini, hangi projeye/amaca tahsis edildiğini, hangi kurumdan alındığını mutlaka belirt.
 - Eğer kaynakta bu detaylar varsa, LLM bu detayları atlamamalı; fakat kaynakta yoksa, hiç bir detay eklememeli, sadece genel cümleyle yetinmelidir.
 
-Çıktıyı SADECE şu JSON formatında ver, başka hiçbir metin ekleme ("category" alanını yalnızca kullanıcı mesajı isterse ekle):
-{"sections": [{"category": "...", "subheading": "...", "narrative": "...", "source_urls": ["...", "..."]}]}"""
+Çıktıyı SADECE şu JSON formatında ver, başka hiçbir metin ekleme ("category" ve "kisaca" alanlarını yalnızca kullanıcı mesajı isterse ekle):
+{"kisaca": "...", "sections": [{"category": "...", "subheading": "...", "narrative": "...", "source_urls": ["...", "..."]}]}"""
+
+MARKET_SYSTEM_PROMPT = """Sen Borsa İstanbul odaklı bir sabah bülteninin editörüsün. Sana son 24 saatin piyasa haberlerinin BAŞLIKLARI ve linkleri verilecek. Bültenin en üstündeki "Piyasa Gündemi" kutusunu yaz: piyasayı etkileyebilecek en önemli 3-5 gelişme.
+
+ÖNCELİK SIRASI: TCMB/Fed faiz kararları ve açıklamaları, enflasyon ve diğer makro veriler (TÜİK, büyüme, cari denge, işsizlik), BIST endeks değişiklikleri ve Borsa İstanbul kararları, vergi/regülasyon/SPK kararları, kur ve küresel piyasalarda büyük hareketler, bugün açıklanacak önemli veriler.
+
+KURALLAR:
+- SADECE başlıklarda geçen bilgi ve rakamları kullan; rakam UYDURMA. Başlıkta rakam yoksa rakamsız yaz.
+- Teknik analiz, destek/direnç, tek bir hissenin günlük fiyat hareketi, "günün en çok yükselenleri" gibi maddeleri ALMA.
+- Aynı gelişmeyi anlatan başlıkları tek maddede birleştir.
+- subheading: 1-3 kelimelik etiket ("Faiz", "Enflasyon", "Endeks değişikliği", "Küresel", "Regülasyon"). narrative: 1-2 kısa cümle; mümkünse piyasa için anlamını kaynaktaki bilgiyle söyle, spekülasyon yapma.
+- Önemli bir gelişme yoksa {"sections": []} döndür.
+
+Çıktıyı SADECE şu JSON formatında ver:
+{"sections": [{"subheading": "...", "narrative": "...", "source_urls": ["..."]}]}"""
+
+
+class _Parsed(NamedTuple):
+    """One Groq response: (category code or None, section) pairs plus the
+    optional top-level "kisaca" lede."""
+
+    sections: list[tuple[str | None, SynthesizedSection]]
+    summary: str | None
 
 
 class GroqProvider(SummarizerProvider):
@@ -172,8 +202,9 @@ class GroqProvider(SummarizerProvider):
         total_items = sum(len(items) for _, items in categories)
 
         sections_by_category: dict[NewsCategory, list[SynthesizedSection]] = {}
+        summary: str | None = None
         if total_items <= CHUNK_THRESHOLD:
-            sections_by_category = await self._synthesize_whole_report(report.ticker, categories)
+            sections_by_category, summary = await self._synthesize_whole_report(report.ticker, categories)
         else:
             for category, items in categories:
                 sections_by_category[category] = await self._synthesize_category(report.ticker, category, items)
@@ -181,12 +212,22 @@ class GroqProvider(SummarizerProvider):
         return SynthesizedCompanyReport(
             ticker=report.ticker,
             company_name=report.company_name,
+            summary=summary,
             sections_by_category=sections_by_category,
         )
 
+    async def summarize_market(self, headlines: list[NewsItem]) -> list[SynthesizedSection]:
+        lines = ["Son 24 saatin piyasa başlıkları:", ""]
+        for i, item in enumerate(headlines, start=1):
+            lines.append(f"{i}. {item.title}")
+            if item.url:
+                lines.append(f"   URL: {item.url}")
+        parsed = await self._call_with_retry("PIYASA", "piyasa_gundemi", "\n".join(lines), MARKET_SYSTEM_PROMPT)
+        return [section for _, section in parsed.sections]
+
     async def _synthesize_whole_report(
         self, ticker: str, categories: list[tuple[NewsCategory, list[NewsItem]]]
-    ) -> dict[NewsCategory, list[SynthesizedSection]]:
+    ) -> tuple[dict[NewsCategory, list[SynthesizedSection]], str | None]:
         """One call for all of a ticker's items. Per-category calls can't see
         each other, so one broker report filed under both Finansal Sonuçlar
         and Sektörel came back as three overlapping sections (AKBNK/HSBC,
@@ -194,10 +235,11 @@ class GroqProvider(SummarizerProvider):
         each story in exactly one category."""
         prompt = self._build_report_prompt(ticker, categories)
         result: dict[NewsCategory, list[SynthesizedSection]] = {}
-        for category_code, section in await self._call_with_retry(ticker, "tum_kategoriler", prompt):
+        parsed = await self._call_with_retry(ticker, "tum_kategoriler", prompt)
+        for category_code, section in parsed.sections:
             category = _parse_category(category_code)
             result.setdefault(category, []).append(section)
-        return result
+        return result, parsed.summary
 
     async def _synthesize_category(
         self, ticker: str, category: NewsCategory, items: list[NewsItem]
@@ -212,17 +254,18 @@ class GroqProvider(SummarizerProvider):
         sections: list[SynthesizedSection] = []
         for chunk in chunks:
             prompt = self._build_user_prompt(ticker, category, chunk)
-            sections.extend(section for _, section in await self._call_with_retry(ticker, category.value, prompt))
+            parsed = await self._call_with_retry(ticker, category.value, prompt)
+            sections.extend(section for _, section in parsed.sections)
         return sections
 
     async def _call_with_retry(
-        self, ticker: str, label: str, user_prompt: str
-    ) -> list[tuple[str | None, SynthesizedSection]]:
+        self, ticker: str, label: str, user_prompt: str, system_prompt: str = SYSTEM_PROMPT
+    ) -> _Parsed:
         last_error: RuntimeError | None = None
         max_tokens = self._max_tokens
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
-                return await self._call_once(ticker, label, user_prompt, max_tokens=max_tokens)
+                return await self._call_once(ticker, label, user_prompt, system_prompt, max_tokens=max_tokens)
             except _PayloadTooLargeError as exc:
                 last_error = exc
                 reduced = max(1, int(max_tokens * PAYLOAD_TOO_LARGE_RETRY_FACTOR))
@@ -242,8 +285,9 @@ class GroqProvider(SummarizerProvider):
         raise last_error
 
     async def _call_once(
-        self, ticker: str, label: str, user_prompt: str, max_tokens: int | None = None
-    ) -> list[tuple[str | None, SynthesizedSection]]:
+        self, ticker: str, label: str, user_prompt: str, system_prompt: str = SYSTEM_PROMPT,
+        max_tokens: int | None = None,
+    ) -> _Parsed:
         """Returns (category code or None, section) pairs: the whole-report
         prompt asks for a "category" field per section, the per-category
         prompt doesn't and its caller ignores it."""
@@ -253,7 +297,7 @@ class GroqProvider(SummarizerProvider):
                 max_tokens=max_tokens if max_tokens is not None else self._max_tokens,
                 response_format={"type": "json_object"},
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
             )
@@ -296,7 +340,7 @@ class GroqProvider(SummarizerProvider):
             )
 
         try:
-            return [
+            sections = [
                 (
                     section.pop("category", None) if isinstance(section, dict) else None,
                     SynthesizedSection.model_validate(section),
@@ -305,6 +349,9 @@ class GroqProvider(SummarizerProvider):
             ]
         except ValidationError as exc:
             raise RuntimeError(f"Groq {ticker}/{label}: JSON, SynthesizedSection şemasına uymuyor: {exc}") from exc
+
+        summary = parsed.get("kisaca")
+        return _Parsed(sections, summary.strip() if isinstance(summary, str) and summary.strip() else None)
 
     @staticmethod
     def _build_report_prompt(ticker: str, categories: list[tuple[NewsCategory, list[NewsItem]]]) -> str:
@@ -316,6 +363,7 @@ class GroqProvider(SummarizerProvider):
             f"Her section'a bir \"category\" alanı ekle; değeri şunlardan biri olmalı: {codes}.",
             "Ön-kategori bir ipucudur; haberin içeriğine göre daha uygun kategoriyi seçebilirsin.",
             "Aynı olay/rapor birden fazla haberde veya ön-kategoride geçse bile TEK section yaz ve tek kategoriye koy.",
+            "Ayrıca üst seviyede bir \"kisaca\" alanı yaz: günün en önemli gelişmesini anlatan TEK cümle (en fazla ~25 kelime). Hiç section yoksa \"kisaca\" boş string olsun.",
             "",
             "Ham haberler:",
         ]

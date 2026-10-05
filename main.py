@@ -20,6 +20,7 @@ from config.constants import SourceType
 from config.settings import AppConfig, PolitenessConfig, TickerConfig, get_settings
 from nlp.categorizer import categorize_batch
 from nlp.dedup import deduplicate
+from nlp.market_brief import build_market_brief
 from nlp.providers.factory import get_provider
 from nlp.providers.noop_provider import NoopProvider
 from scrapers.bigpara_scraper import BigparaScraper
@@ -135,6 +136,7 @@ async def run_pipeline() -> DigestRun:
     digest_run = DigestRun()
 
     kap_raw_by_ticker = await fetch_kap_once_and_group(settings.active_bist_tickers, settings, digest_run)
+    digest_run.market_brief = await build_market_brief(settings, get_provider(settings))
 
     for ticker in settings.active_bist_tickers:
         try:
@@ -153,19 +155,31 @@ def render_digest_text(digest_run: DigestRun) -> str:
     in the workflow log, so a run's content can be read straight from the
     Actions page without downloading the artifact."""
     lines = [f"FollowUrFirm Digest — {digest_run.run_date.strftime('%d.%m.%Y %H:%M')} UTC", ""]
+
+    def add_section(section) -> None:
+        if section.narrative != section.subheading:
+            lines.append(f"* {section.subheading}: {section.narrative}")
+        else:
+            lines.append(f"* {section.subheading}")
+        lines.extend(f"  -> {url}" for url in section.source_urls)
+
+    if digest_run.market_brief:
+        lines.append("== Piyasa Gündemi ==")
+        for section in digest_run.market_brief:
+            add_section(section)
+        lines.append("")
+
     for report in digest_run.company_reports:
         lines.append(f"== {report.ticker} — {report.company_name} ==")
         if report.is_empty():
             lines += ["Bugün yeni bir gelişme yok.", ""]
             continue
-        for category, sections in report.ordered_sections():
-            lines.append(f"[{category.display_name_tr}]")
+        if report.summary:
+            lines.append(f"Kısaca: {report.summary}")
+        for _, sections in report.ordered_sections():
             for section in sections:
-                lines.append(f"* {section.subheading}")
-                if section.narrative != section.subheading:
-                    lines.append(f"  {section.narrative}")
-                lines += [f"  -> {url}" for url in section.source_urls]
-            lines.append("")
+                add_section(section)
+        lines.append("")
     if digest_run.errors:
         lines.append("Uyarılar:")
         lines += [f"- {error}" for error in digest_run.errors]

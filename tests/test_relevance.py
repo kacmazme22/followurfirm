@@ -50,3 +50,53 @@ def test_multi_ticker_list():
 ])
 def test_keyword_category(text, expected):
     assert _match_keyword_category(text) == expected
+
+
+# --- From the 2026-10-03 mail the user flagged ("bu olmamalıydı") ----------
+
+from nlp.relevance import clean_title  # noqa: E402
+from utils.article_fetcher import clean_article_text  # noqa: E402
+from nlp.providers.noop_provider import _lead  # noqa: E402
+
+
+def test_clean_title_strips_bigpara_asterisks_and_wrapper():
+    assert clean_title("***KCHOL*** (*Koç Holding YKB Vekili Ali Koç: YZ doğru kullanılırsa büyük fırsatlar getiriyor)") == (
+        "Koç Holding YKB Vekili Ali Koç: YZ doğru kullanılırsa büyük fırsatlar getiriyor"
+    )
+    # Asterisks used to hide this list from the multi-ticker rule.
+    assert is_multi_ticker_list(clean_title("***ESCOM* *AKYHO* *HATSN* *KOCMT* *NATEN* *AYDEM*..."))
+
+
+@pytest.mark.parametrize("title", [
+    "YEO TEKNOLOJI ENERJI (YEOTK) Hisse Senedi",
+    "YEOTK Hisse Yorumları (YEO TEKNOLOJI ENERJI Güncel Yorumlar)",
+    "YEOTK MERKEZİ KAYIT KURULUŞU A.Ş. (Borsada İşlem Gören Tipe Dönüşüm Duyurusu)",
+])
+def test_quote_pages_and_infra_notices_dropped(title):
+    assert is_market_noise(title)
+
+
+def test_bigpara_analysis_bulletin_dropped_by_url():
+    assert is_market_noise("Analiz: Günlük Bülten", "https://www.bigpara.com/haberler/araci-kurum-raporlari/analiz-gunluk-bulten-ziraat-yatirim_ID1/")
+
+
+def test_article_cleaning_drops_site_chrome_and_disclaimer():
+    chrome = ("Bildirimler Bildirimler En Çok Arananlar © Copyright 2026 - Hürriyet Gazetecilik Matbaacılık A.Ş "
+              "Kullanım Koşulları. BIST 100 Dolar Euro Altın Petrol Tahvil")
+    assert clean_article_text(chrome) is None
+
+    article = (
+        "En Çok Arananlar Bigpara\n"
+        "Gübretaş Maden Yatırımları Genel Kurulu, 1,5 milyar TL kârın en geç 9 Ekim 2026 tarihini geçmemek üzere "
+        "dağıtılması için Yönetim Kuruluna yetki verdi.\n"
+        "ForInvest Haber Burada yer alan yatırım bilgi, yorum ve tavsiyeleri yatırım danışmanlığı kapsamında değildir."
+    )
+    cleaned = clean_article_text(article)
+    assert cleaned.startswith("Gübretaş Maden")
+    assert "danışmanlığı" not in cleaned and "En Çok Arananlar" not in cleaned
+
+
+def test_noop_fallback_keeps_only_the_lead():
+    body = "Birinci cümle burada bitiyor. " * 30
+    lead = _lead(body)
+    assert len(lead) <= 280 and lead.endswith(".")
