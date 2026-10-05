@@ -37,6 +37,7 @@ LOOKBACK_HOURS = 24
 # "Merkez Bankası faizi 300 baz puan indirdi - X".
 DUPLICATE_TITLE_SCORE = 85
 QUERY_SPACING_SECONDS = 2.0
+MAX_LINKS_PER_ITEM = 2
 
 
 async def _get_feed(client: httpx.AsyncClient, url: str, query: str) -> httpx.Response | None:
@@ -95,7 +96,11 @@ async def build_market_brief(settings: AppConfig, provider: SummarizerProvider) 
         headlines = await fetch_market_headlines(settings)
         if not headlines:
             return []
-        return await provider.summarize_market(headlines)
+        sections = await provider.summarize_market(headlines)
+        # One market item came back with six near-identical Google links.
+        for section in sections:
+            section.source_urls = section.source_urls[:MAX_LINKS_PER_ITEM]
+        return sections
     except Exception as exc:  # the box is optional; never sink the digest
         logger.error("Piyasa gündemi oluşturulamadı: %s: %s", type(exc).__name__, exc, exc_info=True)
         return []

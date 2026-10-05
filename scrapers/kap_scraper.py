@@ -44,10 +44,10 @@ DISCLOSURE_REFERER = "https://www.kap.org.tr/tr/bildirim-sorgu"
 DISCLOSURE_DETAIL_URL_TEMPLATE = "https://www.kap.org.tr/tr/Bildirim/{disclosure_index}"
 
 # Disclosures can land just after midnight, so the query window is wider than
-# a strict "yesterday->today". This is safe because NewsItem's content_hash
-# dedup (scrapers/models.py) already collapses the same disclosure showing up
-# in two consecutive runs — a wide window + dedup beats a tight window that
-# risks silently dropping a disclosure at the day boundary.
+# a strict "yesterday->today". NOTE: dedup (nlp/dedup.py) only works within a
+# single run — nothing is remembered between runs yet, so a disclosure can
+# appear in two consecutive digests. A wide window that may repeat beats a
+# tight one that risks silently dropping a disclosure at the day boundary.
 LOOKBACK_DAYS = 2
 
 
