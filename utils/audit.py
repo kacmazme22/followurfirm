@@ -21,9 +21,18 @@ logger = logging.getLogger("audit")
 BODY_PREVIEW_CHARS = 160
 
 
+# KAP filings (and Bigpara's copies of them) are logged in full: on
+# 2026-10-06 the same Akbank bond filing came out as "50,0 mn USD" in one run
+# and "5,0 mn USD, EUR" in the next, and a 160-char preview couldn't show
+# which the source actually said.
+FULL_BODY_URL_PATHS = ("/kap-haberleri/", "kap.org.tr")
+
+
 def log_inputs(label: str, items: list[NewsItem]) -> None:
     for i, item in enumerate(items, start=1):
-        body = " ".join(item.body_snippet.split())[:BODY_PREVIEW_CHARS] if item.body_snippet else "(yalnızca başlık)"
+        full = item.source.value == "kap" or any(p in str(item.url or "") for p in FULL_BODY_URL_PATHS)
+        limit = None if full else BODY_PREVIEW_CHARS
+        body = " ".join(item.body_snippet.split())[:limit] if item.body_snippet else "(yalnızca başlık)"
         logger.info("[%s] girdi %d (%s): %s | %s", label, i, item.source.value, item.title, body)
 
 
