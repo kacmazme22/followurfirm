@@ -82,6 +82,8 @@ _MARKET_NOISE_PATTERNS = [
         r"hisse (yorumları|fiyatı|grafiği|detay)",
         r"güncel yorumlar",
         r"canlı grafik",
+        # Price-limit trading halts: a price event, not company news.
+        r"devre kesici",
         # Bigpara relays of market-infrastructure notices that list the
         # ticker among others (MKK share-type conversions, BIST index lists).
         r"merkezi kayıt kuruluşu",

@@ -161,6 +161,8 @@ BOILERPLATE_NOISE_PATTERNS: list[str] = [
     # Routine KAP filings with nothing for an investor (2026-10-06 run).
     "şirket genel bilgi formu",
     "genel kurul kararlarının tescili",
+    # Borsa İstanbul's price-limit halt notices, filed under the ticker.
+    "devre kesici",
 ]
 
 DEFAULT_CATEGORY = NewsCategory.GENERAL_SECTOR
