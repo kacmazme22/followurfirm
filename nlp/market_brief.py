@@ -119,6 +119,22 @@ async def fetch_market_headlines(settings: AppConfig) -> list[NewsItem]:
     return headlines[: config.max_headlines]
 
 
+# The model kept labelling the daily close "Endeks değişikliği" despite the
+# prompt (dry runs 37524563953, 37525678517). The label is only true when a
+# cited headline is about index composition, so that's checked in code.
+_COMPOSITION_WORDS = ("endekse", "endeksten", "dahil edil", "çıkarıl", "msci", "ftse", "bileşim", "endeks değişikliği")
+
+
+def _fix_index_change_labels(sections: list[SynthesizedSection], headlines: list[NewsItem]) -> None:
+    titles_by_url = {str(h.url): tr_lower(h.title) for h in headlines if h.url}
+    for section in sections:
+        if tr_lower(section.subheading) != "endeks değişikliği":
+            continue
+        cited = [titles_by_url.get(str(u), "") for u in section.source_urls]
+        if not any(word in title for title in cited for word in _COMPOSITION_WORDS):
+            section.subheading = "Dünkü seans"
+
+
 async def build_market_brief(settings: AppConfig, provider: SummarizerProvider) -> list[SynthesizedSection]:
     if not settings.yaml.sources.market_brief.enabled:
         return []
@@ -131,6 +147,7 @@ async def build_market_brief(settings: AppConfig, provider: SummarizerProvider) 
         # One market item came back with six near-identical Google links.
         for section in sections:
             section.source_urls = section.source_urls[:MAX_LINKS_PER_ITEM]
+        _fix_index_change_labels(sections, headlines)
         log_outputs("PIYASA", sections, headlines)
         return sections
     except Exception as exc:  # the box is optional; never sink the digest

@@ -170,3 +170,23 @@ def test_google_news_kap_relays_dropped():
     news = RawScrapedItem(source=SourceType.GOOGLE_NEWS, ticker="GUBRF", raw_title="Gübretaş yeni tesis yatırımı açıkladı")
     kept = filter_relevant([relay, news], TickerConfig(symbol="GUBRF", name="Gübre Fabrikaları"))
     assert [i.raw_title for i in kept] == ["Gübretaş yeni tesis yatırımı açıkladı"]
+
+
+def test_daily_close_is_not_an_index_change():
+    from nlp.market_brief import _fix_index_change_labels
+    from scrapers.models import NewsItem, SynthesizedSection
+    from config.constants import SourceType
+
+    close = NewsItem(ticker="PIYASA", title="Borsa günü düşüşle tamamladı: BIST 100 12.374 puanda",
+                     source=SourceType.GOOGLE_NEWS, url="https://n.example/1")
+    msci = NewsItem(ticker="PIYASA", title="MSCI, iki Türk şirketini endekse dahil etti",
+                    source=SourceType.GOOGLE_NEWS, url="https://n.example/2")
+    wrong = SynthesizedSection(subheading="Endeks değişikliği", narrative="x", source_urls=["https://n.example/1"])
+    right = SynthesizedSection(subheading="Endeks değişikliği", narrative="y", source_urls=["https://n.example/2"])
+    _fix_index_change_labels([wrong, right], [close, msci])
+    assert wrong.subheading == "Dünkü seans"
+    assert right.subheading == "Endeks değişikliği"
+
+
+def test_circuit_breaker_is_noise():
+    assert is_market_noise("YEOTK BORSA İSTANBUL BISTECH DEVRE KESİCİ UYGULAMASI (Pay Bazında Devre Kesici Bildirimi)")

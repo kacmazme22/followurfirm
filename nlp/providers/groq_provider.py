@@ -178,6 +178,7 @@ YAZIM:
 - narrative: uzunluğu haberdeki bilgiye göre belirle; kısa yazmak için bilgi atma, uzatmak için dolgu ekleme. Basit bir olay (tek atama, tek patent) 1-2 cümle; çok parçalı bir olay (finansal sonuç, büyük sözleşme, birleşme, analist raporu, geri alım programı) yatırımcının ihtiyaç duyduğu tüm rakamlarla 3-5 cümle. Önce olay ve büyüklüğü (tutar, adet, oran, fiyat aralığı, karşı taraf, tarih), sonra kritik detaylar (vade, finansman, devreye alma, kârın kullanımı, öncekiyle karşılaştırma). Örnek: "Azerenerji (Azerbaycan) ile 250 MWh batarya depolama tesisi için 58,6 mn $'lık EPC-F sözleşmesi imzalandı. Finansman 4 yıl geri ödemeli, tesis 1 yıl içinde devreye girecek."
 - Okuyucu linke tıklamadan anlamalı: haberin özündeki rakamı (hedef fiyat ve önceki değeri, tavsiye, tutar, oran) mutlaka yaz. "Yeni hedef fiyatını duyurdu" gibi rakamsız bir cümle YASAK.
 - Ham metni kopyalama; bildirim dilini ("Şirketimiz", "kamuoyuna duyurulur") ve içi boş yorumları ("dikkat çekecek", "önem taşımaktadır", "olumlu etki") yazma.
+- Aynı rapor/olay için birden fazla haber varsa (ör. aynı aracı kurum raporunun hedef fiyat ve sektör görünümü haberleri) TEK maddede birleştir.
 - source_ids: maddeyi destekleyen haberlerin numaraları (ör. [1, 3]). Metne URL yazma.
 
 RAKAM DOĞRULUĞU (en önemli kural):
@@ -206,6 +207,8 @@ KURALLAR:
 - Beklenti haberleri değerlidir: aracı kurumların yaklaşan karar/veri için tahminlerini (ör. "Citi ve Commerzbank 22 Ekim PPK'sında 100 bp indirim bekliyor") tarih ve rakamıyla yaz.
 - "Zirve", "rekor", "tarihi seviye" gibi nitelemeleri YALNIZCA başlıkta aynen geçiyorsa kullan; "gün içi en yüksek" ile "yeni zirve" aynı şey değildir. Başlıkta olmayan zaman ifadesi ("haftanın ilk yarısında", "bugün") ekleme.
 - Somut bir karar, veri veya olay içermeyen yorum/analiz başlıklarını ("... üzerine analiz gündemde", "uzmanlar değerlendirdi") madde yapma. 3 güçlü madde, 5 zayıf maddeden iyidir; uygun madde yoksa boş liste döndür.
+- Başlıkta olmayan yorum ve sonuç cümlesi ekleme ("piyasada beklenti artıyor", "rahatlama sinyali verdi", "olumlu karşılandı"): sadece başlıktaki olgu.
+- Aylık enflasyon "mevsimsellikten arındırılmış" ise bunu belirt ("aylık %1,61, mevsimsellikten arındırılmış"); düz aylık oranla karıştırma.
 - "-ebilir/-abilir" ile biten tahmin cümleleri ("olumlu duyarlılık yaratabilir", "likiditeyi artırabilir") YASAK; sadece ne olduğunu yaz.
 - Aynı gelişmeyi anlatan başlıkları tek maddede birleştir.
 - subheading: 1-3 kelimelik etiket: "Faiz", "Enflasyon", "Makro veri", "Endeks değişikliği" (YALNIZCA başlık bir şirketin endekse girdiğini/çıktığını ya da MSCI/FTSE'nin bir sınıflandırma kararını açıkça söylüyorsa; "MSCI Türkiye ... ayrıştı/yükseldi" gibi performans başlıkları endeks değişikliği DEĞİLDİR, gerekirse "Dünkü seans" altında performans olarak yaz), "Dünkü seans", "Küresel", "Regülasyon".
