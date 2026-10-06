@@ -158,6 +158,9 @@ BOILERPLATE_NOISE_PATTERNS: list[str] = [
     "borsada işlem gören tipe dönüşüm",
     "işlem yasağı nedeniyle",
     "pay endeksleri",
+    # Routine KAP filings with nothing for an investor (2026-10-06 run).
+    "şirket genel bilgi formu",
+    "genel kurul kararlarının tescili",
 ]
 
 DEFAULT_CATEGORY = NewsCategory.GENERAL_SECTOR

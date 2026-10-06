@@ -34,6 +34,10 @@ on:
         description: "Bugün zaten gönderildiyse bile tekrar gönder"
         type: boolean
         default: false
+      require_kap:
+        description: "KAP'a ulaşılamazsa mail gönderme, sonraki tetiklemeye bırak (sabahın erken tetiklemeleri için)"
+        type: boolean
+        default: false
 
 concurrency:
   group: daily-digest-${{ github.ref }}
@@ -98,18 +102,21 @@ jobs:
           # otherwise degrade to the raw-list digest instead of failing.
           AI_PROVIDER: ${{ inputs.ai_provider || (secrets.GROQ_API_KEY != '' && 'groq' || 'noop') }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+          REQUIRE_KAP: ${{ inputs.require_kap && 'true' || 'false' }}
           ENVIRONMENT: ci
           SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python main.py
 
+      # main.py writes output/SKIPPED_NO_KAP when it held the mail back for a
+      # later trigger (REQUIRE_KAP); the day must not be marked as sent then.
       - name: Record today's digest as sent
-        if: steps.guard.outputs.skip != 'true' && success() && inputs.dry_run != true
+        if: steps.guard.outputs.skip != 'true' && success() && inputs.dry_run != true && hashFiles('output/SKIPPED_NO_KAP') == ''
         run: date -u > .digest-sent
 
       - name: Save once-per-day marker
-        if: steps.guard.outputs.skip != 'true' && success() && inputs.dry_run != true
+        if: steps.guard.outputs.skip != 'true' && success() && inputs.dry_run != true && hashFiles('output/SKIPPED_NO_KAP') == ''
         uses: actions/cache/save@v4
         with:
           path: .digest-sent

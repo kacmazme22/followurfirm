@@ -175,7 +175,7 @@ RAKAM DOĞRULUĞU (en önemli kural):
 - SADECE kaynakta geçen isim, kurum ve rakamları kullan; hiçbir şey uydurma, tahmin etme.
 - Rakamı kaynaktaki birimiyle aktar. Kısaltma yalnızca kesinse: 58.600.000 -> 58,6 mn; 1.500.000.000 -> 1,5 mlr. Birim belirsizse (milyon mu milyar mı) kaynaktaki yazımı aynen kullan; aynı tutarı iki farklı birimle ASLA yazma.
 - Bir tarihin ne olduğu (ihraç, vade, ödeme) kaynakta açık değilse o tarihi yazma.
-- Bir haberin özü bir rakamsa (tutar, oran) ve kaynakta o rakam yoksa, o maddeyi hiç yazma. İSTİSNA: analist raporu, yatırımcı sunumu, analist/yatırımcı toplantısı ve toplantı notları — bunları rakam olmasa da HER ZAMAN yaz (aşağıya bak). "(metin yok, yalnızca başlık)" işaretli haberlerde bilgi sadece başlıktan ibarettir; başlıkta olmayan hiçbir şeyi yazma.
+- Bir haberin özü bir rakamsa (tutar, oran) ve kaynakta o rakam yoksa, o maddeyi hiç yazma. İSTİSNALAR (rakam olmasa da HER ZAMAN yaz): (1) analist raporu, yatırımcı sunumu, analist/yatırımcı toplantısı ve toplantı notları (aşağıya bak); (2) kaynağı "kap" olan önemli bildirimler (borçlanma/tahvil ihracı, sözleşme, yatırım, satın alma/satış, temettü, geri alım, sermaye artırımı, yönetim/ortaklık değişikliği, dava): detay yoksa tek cümleyle ne olduğunu yaz, ör. "Yurtdışı piyasalarda tahvil ihracı yaptı; tutar ve vade KAP bildiriminde." Okuyucu linkten açar. "(metin yok, yalnızca başlık)" işaretli haberlerde bilgi sadece başlıktan ibarettir; başlıkta olmayan hiçbir şeyi yazma.
 - Hiçbir haber kriterlere uymuyorsa {"sections": []} döndür; boş bölüm dolgu metinden iyidir.
 
 Çıktıyı SADECE JSON olarak ver ("category" ve "kisaca" alanlarını yalnızca kullanıcı mesajı isterse ekle):
@@ -193,7 +193,8 @@ KURALLAR:
 - Somut bir karar, veri veya olay içermeyen yorum/analiz başlıklarını ("... üzerine analiz gündemde", "uzmanlar değerlendirdi") madde yapma. 3 güçlü madde, 5 zayıf maddeden iyidir; uygun madde yoksa boş liste döndür.
 - "-ebilir/-abilir" ile biten tahmin cümleleri ("olumlu duyarlılık yaratabilir", "likiditeyi artırabilir") YASAK; sadece ne olduğunu yaz.
 - Aynı gelişmeyi anlatan başlıkları tek maddede birleştir.
-- subheading: 1-3 kelimelik etiket ("Faiz", "Enflasyon", "Endeks değişikliği", "Küresel", "Regülasyon"). narrative: 1-2 kısa cümle; mümkünse piyasa için anlamını kaynaktaki bilgiyle söyle, spekülasyon yapma.
+- subheading: 1-3 kelimelik etiket: "Faiz", "Enflasyon", "Makro veri", "Endeks değişikliği" (YALNIZCA endekse giren/çıkan şirketler, MSCI/FTSE kararları gibi bileşim değişiklikleri için), "Dünkü seans", "Küresel", "Regülasyon".
+- Dünkü seansın kapanışı en fazla TEK maddede, başlıktaki rakamlarla yazılabilir ("Dünkü seans: BIST 100 %0,56 düşüşle 12.374 puanda kapandı; bankacılık yükseldi."). Açılış, gün içi ve "yatay seyir" başlıklarından madde yapma. narrative: 1-2 kısa cümle; mümkünse piyasa için anlamını kaynaktaki bilgiyle söyle, spekülasyon yapma.
 - source_ids: maddeyi en iyi destekleyen EN FAZLA 2 başlığın numarası (ör. [2, 5]).
 - Önemli bir gelişme yoksa {"sections": []} döndür.
 

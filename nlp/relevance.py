@@ -81,6 +81,7 @@ _MARKET_NOISE_PATTERNS = [
         r"hisse senedi$",
         r"hisse (yorumları|fiyatı|grafiği|detay)",
         r"güncel yorumlar",
+        r"canlı grafik",
         # Bigpara relays of market-infrastructure notices that list the
         # ticker among others (MKK share-type conversions, BIST index lists).
         r"merkezi kayıt kuruluşu",
