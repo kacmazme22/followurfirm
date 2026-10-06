@@ -121,3 +121,30 @@ def test_broker_report_url_goes_to_analyst_category():
         raw_url="https://www.bigpara.com/haberler/araci-kurum-raporlari/akbnk-ykbnk-garan-duzeltme-hsbc-t_ID1/",
     ))
     assert item.category == NewsCategory.ANALYST_IR
+
+
+# --- From the 2026-10-06 audit log -------------------------------------------
+
+from datetime import datetime as _dt  # noqa: E402
+
+
+@pytest.mark.parametrize("title, dropped", [
+    ("MERKEZ BANKASI HAZİRAN AYI FAİZ KARARI 2026 SON DAKİKA (PPK AÇIKLAMASI)", True),
+    ("FED FAİZ KARARI EKİM AYI TOPLANTI TARİHİ | FED faiz kararı ne zaman açıklanacak?", True),
+    ("TÜİK eylül enflasyonunu %29,73; ENAG %46,61 olarak açıkladı", False),
+    ("Citi'den Merkez Bankası için faiz tahmini: Ekim ayında 100 baz puanlık indirim bekliyor", False),
+])
+def test_market_seo_pages_and_stale_months_dropped(title, dropped):
+    from nlp.market_brief import _is_not_news
+    assert _is_not_news(title, _dt(2026, 10, 6)) is dropped
+
+
+def test_kap_registration_notice_dropped_by_summary():
+    from nlp.categorizer import categorize
+    from scrapers.models import RawScrapedItem
+    from config.constants import SourceType
+
+    assert categorize(RawScrapedItem(
+        source=SourceType.KAP, ticker="GUBRF", raw_title="Genel Kurul İşlemlerine İlişkin Bildirim",
+        raw_body_snippet="Genel Kurul Kararlarının Tescili Hk.",
+    )) is None

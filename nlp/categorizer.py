@@ -27,7 +27,10 @@ def categorize(raw_item: RawScrapedItem) -> NewsItem | None:
     category. Returns None if the title matches a known boilerplate/noise
     pattern (KAP auto-generated disclaimer footers) — those are skipped
     entirely rather than assigned any category."""
-    if _is_boilerplate(raw_item.raw_title):
+    # KAP's title is only the filing type ("Genel Kurul İşlemlerine İlişkin
+    # Bildirim"); what the filing is about ("Genel Kurul Kararlarının Tescili
+    # Hk.") is in the summary, so the start of the body is checked too.
+    if _is_boilerplate(raw_item.raw_title) or _is_boilerplate((raw_item.raw_body_snippet or "")[:300]):
         return None
 
     return NewsItem(

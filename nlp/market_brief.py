@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
@@ -26,7 +27,7 @@ from rapidfuzz import fuzz
 from config.constants import SourceType
 from config.settings import AppConfig
 from nlp.providers.base import SummarizerProvider
-from nlp.relevance import is_market_noise, is_multi_ticker_list
+from nlp.relevance import is_market_noise, is_multi_ticker_list, tr_lower
 from scrapers.google_news_scraper import GOOGLE_NEWS_RSS_BASE, GoogleNewsScraper
 from scrapers.models import NewsItem, SynthesizedSection
 from utils.audit import log_inputs, log_outputs
@@ -38,6 +39,26 @@ LOOKBACK_HOURS = 24
 # "Merkez Bankası faizi 300 baz puan indirdi - X".
 DUPLICATE_TITLE_SCORE = 85
 QUERY_SPACING_SECONDS = 2.0
+# The first query (TCMB) alone filled the whole 30-headline budget on
+# 2026-10-06; every query now gets a fair share.
+MAX_HEADLINES_PER_QUERY = 5
+
+_TR_MONTHS = ["ocak", "şubat", "mart", "nisan", "mayıs", "haziran", "temmuz",
+              "ağustos", "eylül", "ekim", "kasım", "aralık"]
+
+
+def _is_not_news(title: str, today: datetime | None = None) -> bool:
+    """SEO "explainer" pages that Google News serves as fresh items:
+    question headlines ("... ne zaman açıklanacak?") and evergreen pages
+    naming an old month ("MERKEZ BANKASI HAZİRAN AYI FAİZ KARARI 2026" in
+    October, which the model then reported as today's decision)."""
+    lowered = tr_lower(title)
+    if "?" in title or any(q in lowered for q in ("ne zaman", "ne olacak", "ne oldu", "nasıl olacak")):
+        return True
+    today = today or datetime.now()
+    recent = {_TR_MONTHS[(today.month - 1 - back) % 12] for back in range(2)}
+    named = {m for m in _TR_MONTHS if re.search(rf"(?<![\wçğıöşü]){m}", lowered)}
+    return bool(named) and not (named & recent)
 MAX_LINKS_PER_ITEM = 2
 
 
@@ -73,18 +94,22 @@ async def fetch_market_headlines(settings: AppConfig) -> list[NewsItem]:
             if response is None:
                 continue
 
+            taken = 0
             for entry in feedparser.parse(response.text).entries:
                 published = entry.get("published_parsed")
                 if published is not None and datetime(*published[:6], tzinfo=timezone.utc) < cutoff:
                     continue
                 title, _ = GoogleNewsScraper._split_title_and_source(entry.get("title", ""))
-                if not title or is_market_noise(title) or is_multi_ticker_list(title):
+                if not title or is_market_noise(title) or is_multi_ticker_list(title) or _is_not_news(title):
                     continue
                 if any(fuzz.token_set_ratio(title, h.title) >= DUPLICATE_TITLE_SCORE for h in headlines):
                     continue
                 headlines.append(
                     NewsItem(ticker="PIYASA", title=title, url=entry.get("link"), source=SourceType.GOOGLE_NEWS)
                 )
+                taken += 1
+                if taken >= MAX_HEADLINES_PER_QUERY:
+                    break
 
     logger.info("Piyasa gündemi: %d başlık toplandı", len(headlines))
     return headlines[: config.max_headlines]
