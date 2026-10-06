@@ -29,6 +29,7 @@ from nlp.providers.base import SummarizerProvider
 from nlp.relevance import is_market_noise, is_multi_ticker_list
 from scrapers.google_news_scraper import GOOGLE_NEWS_RSS_BASE, GoogleNewsScraper
 from scrapers.models import NewsItem, SynthesizedSection
+from utils.audit import log_inputs, log_outputs
 
 logger = logging.getLogger(__name__)
 
@@ -96,10 +97,12 @@ async def build_market_brief(settings: AppConfig, provider: SummarizerProvider) 
         headlines = await fetch_market_headlines(settings)
         if not headlines:
             return []
+        log_inputs("PIYASA", headlines)
         sections = await provider.summarize_market(headlines)
         # One market item came back with six near-identical Google links.
         for section in sections:
             section.source_urls = section.source_urls[:MAX_LINKS_PER_ITEM]
+        log_outputs("PIYASA", sections, headlines)
         return sections
     except Exception as exc:  # the box is optional; never sink the digest
         logger.error("Piyasa gündemi oluşturulamadı: %s: %s", type(exc).__name__, exc, exc_info=True)

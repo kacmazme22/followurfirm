@@ -98,3 +98,19 @@ def test_headline_only_items_are_marked_for_the_model():
     provider, completions = _provider([])
     asyncio.run(provider.summarize_company_report(_report(1, 0)))
     assert "(metin yok, yalnızca başlık)" in completions.prompts[0]
+
+
+def test_audit_log_traces_each_section_to_its_source_titles(caplog):
+    from utils.audit import log_inputs, log_outputs
+    from scrapers.models import SynthesizedSection
+
+    items = [
+        NewsItem(ticker="PIYASA", title="Borsa güne yükselişle başladı", source=SourceType.GOOGLE_NEWS, url="https://n.example/1"),
+        NewsItem(ticker="PIYASA", title="TCMB faizi sabit tuttu", source=SourceType.GOOGLE_NEWS, url="https://n.example/2"),
+    ]
+    section = SynthesizedSection(subheading="Faiz", narrative="x", source_urls=["https://n.example/2"])
+    with caplog.at_level("INFO", logger="audit"):
+        log_inputs("PIYASA", items)
+        log_outputs("PIYASA", [section], items)
+    assert "girdi 1 (google_news): Borsa güne yükselişle başladı | (yalnızca başlık)" in caplog.text
+    assert "çıktı «Faiz» <- TCMB faizi sabit tuttu" in caplog.text

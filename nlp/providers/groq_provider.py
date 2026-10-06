@@ -184,6 +184,8 @@ KURALLAR:
 - SADECE başlıklarda geçen bilgi ve rakamları kullan; rakam UYDURMA. Başlıkta rakam yoksa rakamsız yaz.
 - Teknik analiz, destek/direnç, tek bir hissenin günlük fiyat hareketi, "günün en çok yükselenleri", sıradan günlük endeks/altın/döviz fiyat hareketleri gibi maddeleri ALMA (yalnızca rekor veya olağanüstü bir hareketse, rakamıyla yaz).
 - Rakamı başlıkta nasıl geçiyorsa öyle yaz; "12.4xx" gibi yer tutucu veya yuvarlatılmış rakam YASAK. Rakam yoksa rakamsız yaz.
+- "Zirve", "rekor", "tarihi seviye" gibi nitelemeleri YALNIZCA başlıkta aynen geçiyorsa kullan; "gün içi en yüksek" ile "yeni zirve" aynı şey değildir. Başlıkta olmayan zaman ifadesi ("haftanın ilk yarısında", "bugün") ekleme.
+- Somut bir karar, veri veya olay içermeyen yorum/analiz başlıklarını ("... üzerine analiz gündemde", "uzmanlar değerlendirdi") madde yapma. 3 güçlü madde, 5 zayıf maddeden iyidir; uygun madde yoksa boş liste döndür.
 - "-ebilir/-abilir" ile biten tahmin cümleleri ("olumlu duyarlılık yaratabilir", "likiditeyi artırabilir") YASAK; sadece ne olduğunu yaz.
 - Aynı gelişmeyi anlatan başlıkları tek maddede birleştir.
 - subheading: 1-3 kelimelik etiket ("Faiz", "Enflasyon", "Endeks değişikliği", "Küresel", "Regülasyon"). narrative: 1-2 kısa cümle; mümkünse piyasa için anlamını kaynaktaki bilgiyle söyle, spekülasyon yapma.

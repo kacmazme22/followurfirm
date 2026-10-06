@@ -28,6 +28,7 @@ from scrapers.google_news_scraper import GoogleNewsScraper
 from scrapers.kap_scraper import KapScraper
 from scrapers.models import CompanyReport, DigestRun, RawScrapedItem, SynthesizedCompanyReport
 from templates.styles import template_colors
+from utils.audit import log_inputs, log_outputs
 from utils.email_sender import build_digest_subject, send_digest_email
 
 logger = logging.getLogger(__name__)
@@ -117,8 +118,12 @@ async def _build_company_report(
     )
 
     provider = get_provider(settings)
+    sent_items = [item for _, items in report.ordered_categories() for item in items]
+    log_inputs(ticker.symbol, sent_items)
     try:
-        return await provider.summarize_company_report(report)
+        synthesized = await provider.summarize_company_report(report)
+        log_outputs(ticker.symbol, [s for _, secs in synthesized.ordered_sections() for s in secs], sent_items)
+        return synthesized
     except RuntimeError as exc:
         # LLM synthesis failed (bad/truncated response, invalid JSON, schema
         # mismatch — see GroqProvider's hallucination guards). Fall back to
