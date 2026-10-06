@@ -77,6 +77,9 @@ class MarketBriefConfig(BaseModel):
         # here names a concrete kind of event instead.
         "TCMB faiz kararı when:1d",
         "enflasyon TÜİK açıkladı when:1d",
+        # The user wants the monthly print next to the annual one; headlines
+        # often carry only one of them.
+        "aylık enflasyon TÜFE when:1d",
         "BIST 100 günü tamamladı when:1d",
         "BIST endeks değişikliği when:1d",
         "MSCI Türkiye when:1d",
