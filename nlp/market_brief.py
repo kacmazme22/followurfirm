@@ -55,6 +55,10 @@ def _is_not_news(title: str, today: datetime | None = None) -> bool:
     lowered = tr_lower(title)
     if "?" in title or any(q in lowered for q in ("ne zaman", "ne olacak", "ne oldu", "nasıl olacak")):
         return True
+    # Clickbait teasers carry no fact of their own ("Altın düşerken beklenmedik
+    # gelişme! Fed'in faiz beklentisi değişti", "Altında 7 Ekim alarmı").
+    if "!" in title or any(q in lowered for q in ("beklenmedik gelişme", "alarmı", "dikkat çeken", "flaş gelişme")):
+        return True
     today = today or datetime.now()
     recent = {_TR_MONTHS[(today.month - 1 - back) % 12] for back in range(2)}
     named = {m for m in _TR_MONTHS if re.search(rf"(?<![\wçğıöşü]){m}", lowered)}

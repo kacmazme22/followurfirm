@@ -187,6 +187,7 @@ RAKAM DOĞRULUĞU (en önemli kural):
 - Tarihleri kullanıcı mesajındaki "Bugünün tarihi" ile karşılaştır: geçmişteki bir olayı (yapılmış genel kurul, ödenmiş temettü) gelecek zamanla YAZMA; tescil/sonuç bildirimini "yapılacak" diye sunma.
 - Borçlanma bildirimlerinde ihraç TAVANI/limiti ile fiilen satılan (nominal) tutarı ayır; "ihraç etti" diye yalnızca satılan tutarı yaz, tavanı ancak ayrıca belirt. Yönetim kurulu/SPK onay tarihleri gibi süreç tarihlerini yazma.
 - Bir haberin özü bir rakamsa (tutar, oran) ve kaynakta o rakam yoksa, o maddeyi hiç yazma. İSTİSNALAR (rakam olmasa da HER ZAMAN yaz): (1) analist raporu, yatırımcı sunumu, analist/yatırımcı toplantısı ve toplantı notları (aşağıya bak); (2) kaynağı "kap" olan önemli bildirimler (borçlanma/tahvil ihracı, sözleşme, yatırım, satın alma/satış, temettü, geri alım, sermaye artırımı, yönetim/ortaklık değişikliği, dava): detay yoksa tek cümleyle ne olduğunu yaz, ör. "Yurtdışı piyasalarda tahvil ihracı yaptı; tutar ve vade KAP bildiriminde." Okuyucu linkten açar. "(metin yok, yalnızca başlık)" işaretli haberlerde bilgi sadece başlıktan ibarettir; başlıkta olmayan hiçbir şeyi yazma.
+- Yalnızca bildirim türünü söyleyen başlıklardan ("... Genel Kurul İşlemlerine İlişkin Bildirim", "... Özel Durum Açıklaması") içerik yoksa madde yazma; "KAP bildiriminde bulundu" gibi içi boş cümle YASAK.
 - Hiçbir haber kriterlere uymuyorsa {"sections": []} döndür; boş bölüm dolgu metinden iyidir.
 
 Çıktıyı SADECE JSON olarak ver ("category" ve "kisaca" alanlarını yalnızca kullanıcı mesajı isterse ekle):
@@ -207,7 +208,7 @@ KURALLAR:
 - Somut bir karar, veri veya olay içermeyen yorum/analiz başlıklarını ("... üzerine analiz gündemde", "uzmanlar değerlendirdi") madde yapma. 3 güçlü madde, 5 zayıf maddeden iyidir; uygun madde yoksa boş liste döndür.
 - "-ebilir/-abilir" ile biten tahmin cümleleri ("olumlu duyarlılık yaratabilir", "likiditeyi artırabilir") YASAK; sadece ne olduğunu yaz.
 - Aynı gelişmeyi anlatan başlıkları tek maddede birleştir.
-- subheading: 1-3 kelimelik etiket: "Faiz", "Enflasyon", "Makro veri", "Endeks değişikliği" (YALNIZCA endekse giren/çıkan şirketler, MSCI/FTSE kararları gibi bileşim değişiklikleri için), "Dünkü seans", "Küresel", "Regülasyon".
+- subheading: 1-3 kelimelik etiket: "Faiz", "Enflasyon", "Makro veri", "Endeks değişikliği" (YALNIZCA başlık bir şirketin endekse girdiğini/çıktığını ya da MSCI/FTSE'nin bir sınıflandırma kararını açıkça söylüyorsa; "MSCI Türkiye ... ayrıştı/yükseldi" gibi performans başlıkları endeks değişikliği DEĞİLDİR, gerekirse "Dünkü seans" altında performans olarak yaz), "Dünkü seans", "Küresel", "Regülasyon".
 - Dünkü seansın kapanışı en fazla TEK maddede, başlıktaki rakamlarla yazılabilir ("Dünkü seans: BIST 100 %0,56 düşüşle 12.374 puanda kapandı; bankacılık yükseldi."). Açılış, gün içi ve "yatay seyir" başlıklarından madde yapma. narrative: 1-2 kısa cümle; mümkünse piyasa için anlamını kaynaktaki bilgiyle söyle, spekülasyon yapma.
 - source_ids: maddeyi en iyi destekleyen EN FAZLA 2 başlığın numarası (ör. [2, 5]).
 - Önemli bir gelişme yoksa {"sections": []} döndür.

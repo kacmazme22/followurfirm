@@ -148,3 +148,25 @@ def test_kap_registration_notice_dropped_by_summary():
         source=SourceType.KAP, ticker="GUBRF", raw_title="Genel Kurul İşlemlerine İlişkin Bildirim",
         raw_body_snippet="Genel Kurul Kararlarının Tescili Hk.",
     )) is None
+
+
+@pytest.mark.parametrize("title", [
+    "Altın düşerken beklenmedik gelişme! Fed'in faiz beklentisi değişti",
+    "Altında 7 Ekim alarmı",
+])
+def test_market_clickbait_dropped(title):
+    from nlp.market_brief import _is_not_news
+    assert _is_not_news(title, _dt(2026, 10, 6))
+
+
+def test_google_news_kap_relays_dropped():
+    from nlp.relevance import filter_relevant
+    from config.settings import TickerConfig
+    from scrapers.models import RawScrapedItem
+    from config.constants import SourceType
+
+    relay = RawScrapedItem(source=SourceType.GOOGLE_NEWS, ticker="GUBRF",
+                           raw_title="KAP GÜBRE FABRİKALARI T.A.Ş. GUBRF Genel Kurul İşlemlerine İlişkin Bildirim")
+    news = RawScrapedItem(source=SourceType.GOOGLE_NEWS, ticker="GUBRF", raw_title="Gübretaş yeni tesis yatırımı açıkladı")
+    kept = filter_relevant([relay, news], TickerConfig(symbol="GUBRF", name="Gübre Fabrikaları"))
+    assert [i.raw_title for i in kept] == ["Gübretaş yeni tesis yatırımı açıkladı"]
