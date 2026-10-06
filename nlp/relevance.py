@@ -81,6 +81,7 @@ _MARKET_NOISE_PATTERNS = [
         r"hisse senedi$",
         r"hisse (yorumları|fiyatı|grafiği|detay)",
         r"güncel yorumlar",
+        r"canlı grafik",
         # Bigpara relays of market-infrastructure notices that list the
         # ticker among others (MKK share-type conversions, BIST index lists).
         r"merkezi kayıt kuruluşu",
@@ -162,6 +163,13 @@ def filter_relevant(items: list[RawScrapedItem], ticker: TickerConfig) -> list[R
     for item in items:
         if item.source != SourceType.KAP:
             item.raw_title = clean_title(item.raw_title)
+
+        # Google News relays of KAP filings ("KAP GÜBRE FABRİKALARI T.A.Ş. GUBRF
+        # Genel Kurul İşlemlerine İlişkin Bildirim") are a bare filing type
+        # with no body; the filing itself comes from KAP or Bigpara's mirror.
+        if item.source == SourceType.GOOGLE_NEWS and tr_lower(item.raw_title).startswith("kap "):
+            dropped_unrelated += 1
+            continue
 
         if item.source == SourceType.KAP:
             kept.append(item)

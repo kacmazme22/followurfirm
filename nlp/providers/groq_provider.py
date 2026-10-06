@@ -49,6 +49,8 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import NamedTuple
 
 import groq
@@ -117,6 +119,13 @@ def _is_request_too_large(exc: groq.APIStatusError) -> bool:
     error = body.get("error") if isinstance(body.get("error"), dict) else {}
     return error.get("code") == "rate_limit_exceeded" and "too large" in (error.get("message") or "").lower()
 
+def _today_line() -> str:
+    """The model has no idea what day it is: on 2026-10-06 it reported a
+    30 September general assembly as upcoming and an old June rate decision
+    as news. Every prompt now starts with the date."""
+    return f"Bugünün tarihi: {datetime.now(ZoneInfo('Europe/Istanbul')).strftime('%d.%m.%Y')}"
+
+
 def _body_cap(items: list[NewsItem]) -> int:
     with_body = sum(1 for item in items if item.body_snippet) or 1
     return min(MAX_BODY_CHARS_PER_ITEM, BODY_BUDGET_CHARS // with_body)
@@ -159,6 +168,11 @@ DAHİL ET: sözleşme/sipariş/ihale, yatırım/tesis/kapasite, satın alma/birl
 
 DIŞLA: teknik analiz ve fiyat seviyeleri, günlük fiyat/hacim/açığa satış verisi, blok alım-satım akışı, model portföy ağırlıkları; uyum raporları, yönetim kurulu toplantı/katılım istatistikleri, komite listeleri, form alanları ("güncelleme mi, düzeltme mi, ertelenmiş mi"), sorumluluk beyanları; somut karar veya rakam içermeyen yönetici röportaj/konferans sözleri; çok şirketli raporlarda diğer şirketlerin bilgileri.
 
+ANALİST RAPORLARI VE YATIRIMCI SUNUMLARI (okuyucu için çok değerli, asla atlama):
+- Metin varsa: kurumu, hedef fiyatı (öncekiyle birlikte), tavsiyeyi, tahmin değişikliklerini ve raporun/sunumun ana tezini 2-5 cümlede özetle.
+- Yalnızca başlık varsa: kim neyi yayımladı, tek cümle; başlıkta olmayan rakam ya da tez EKLEME. Ör.: "Ak Yatırım, Akbank için yeni bir şirket raporu yayımladı." Okuyucu linkten açacak.
+- subheading: "Analist raporu", "Yatırımcı sunumu", "Toplantı notu" veya "Hedef fiyat".
+
 YAZIM:
 - subheading: 1-3 kelimelik olay etiketi ("Yeni iş", "Geri alım", "Temettü", "Varlık satışı", "Satın alma", "Yatırım", "Finansal sonuç", "Borçlanma", "Yönetim", "Ortaklık yapısı", "Patent", "Analist görüşü", "Dava").
 - narrative: uzunluğu haberdeki bilgiye göre belirle; kısa yazmak için bilgi atma, uzatmak için dolgu ekleme. Basit bir olay (tek atama, tek patent) 1-2 cümle; çok parçalı bir olay (finansal sonuç, büyük sözleşme, birleşme, analist raporu, geri alım programı) yatırımcının ihtiyaç duyduğu tüm rakamlarla 3-5 cümle. Önce olay ve büyüklüğü (tutar, adet, oran, fiyat aralığı, karşı taraf, tarih), sonra kritik detaylar (vade, finansman, devreye alma, kârın kullanımı, öncekiyle karşılaştırma). Örnek: "Azerenerji (Azerbaycan) ile 250 MWh batarya depolama tesisi için 58,6 mn $'lık EPC-F sözleşmesi imzalandı. Finansman 4 yıl geri ödemeli, tesis 1 yıl içinde devreye girecek."
@@ -170,7 +184,10 @@ RAKAM DOĞRULUĞU (en önemli kural):
 - SADECE kaynakta geçen isim, kurum ve rakamları kullan; hiçbir şey uydurma, tahmin etme.
 - Rakamı kaynaktaki birimiyle aktar. Kısaltma yalnızca kesinse: 58.600.000 -> 58,6 mn; 1.500.000.000 -> 1,5 mlr. Birim belirsizse (milyon mu milyar mı) kaynaktaki yazımı aynen kullan; aynı tutarı iki farklı birimle ASLA yazma.
 - Bir tarihin ne olduğu (ihraç, vade, ödeme) kaynakta açık değilse o tarihi yazma.
-- Bir haberin özü bir rakamsa (hedef fiyat, tutar) ve kaynakta o rakam yoksa, o maddeyi hiç yazma. "(metin yok, yalnızca başlık)" işaretli haberlerde bilgi sadece başlıktan ibarettir; başlıkta olmayan hiçbir şeyi yazma.
+- Tarihleri kullanıcı mesajındaki "Bugünün tarihi" ile karşılaştır: geçmişteki bir olayı (yapılmış genel kurul, ödenmiş temettü) gelecek zamanla YAZMA; tescil/sonuç bildirimini "yapılacak" diye sunma.
+- Borçlanma bildirimlerinde ihraç TAVANI/limiti ile fiilen satılan (nominal) tutarı ayır; "ihraç etti" diye yalnızca satılan tutarı yaz, tavanı ancak ayrıca belirt. Yönetim kurulu/SPK onay tarihleri gibi süreç tarihlerini yazma.
+- Bir haberin özü bir rakamsa (tutar, oran) ve kaynakta o rakam yoksa, o maddeyi hiç yazma. İSTİSNALAR (rakam olmasa da HER ZAMAN yaz): (1) analist raporu, yatırımcı sunumu, analist/yatırımcı toplantısı ve toplantı notları (aşağıya bak); (2) kaynağı "kap" olan önemli bildirimler (borçlanma/tahvil ihracı, sözleşme, yatırım, satın alma/satış, temettü, geri alım, sermaye artırımı, yönetim/ortaklık değişikliği, dava): detay yoksa tek cümleyle ne olduğunu yaz, ör. "Yurtdışı piyasalarda tahvil ihracı yaptı; tutar ve vade KAP bildiriminde." Okuyucu linkten açar. "(metin yok, yalnızca başlık)" işaretli haberlerde bilgi sadece başlıktan ibarettir; başlıkta olmayan hiçbir şeyi yazma.
+- Yalnızca bildirim türünü söyleyen başlıklardan ("... Genel Kurul İşlemlerine İlişkin Bildirim", "... Özel Durum Açıklaması") içerik yoksa madde yazma; "KAP bildiriminde bulundu" gibi içi boş cümle YASAK.
 - Hiçbir haber kriterlere uymuyorsa {"sections": []} döndür; boş bölüm dolgu metinden iyidir.
 
 Çıktıyı SADECE JSON olarak ver ("category" ve "kisaca" alanlarını yalnızca kullanıcı mesajı isterse ekle):
@@ -184,9 +201,15 @@ KURALLAR:
 - SADECE başlıklarda geçen bilgi ve rakamları kullan; rakam UYDURMA. Başlıkta rakam yoksa rakamsız yaz.
 - Teknik analiz, destek/direnç, tek bir hissenin günlük fiyat hareketi, "günün en çok yükselenleri", sıradan günlük endeks/altın/döviz fiyat hareketleri gibi maddeleri ALMA (yalnızca rekor veya olağanüstü bir hareketse, rakamıyla yaz).
 - Rakamı başlıkta nasıl geçiyorsa öyle yaz; "12.4xx" gibi yer tutucu veya yuvarlatılmış rakam YASAK. Rakam yoksa rakamsız yaz.
+- Başlık geçmiş bir dönemi anlatıyorsa (bugünün tarihinden önceki bir ayın kararı vb.) onu bugünün haberi gibi YAZMA.
+- Enflasyon maddesi yazıyorsan, açıklanan ayın AYLIK oranını yıllık oranın yanında ver, ör. "Eylül: aylık %2,1, yıllık %29,73 (ENAG yıllık %46,61)". Aylık oran başlıklarda yoksa yalnızca var olanları yaz, uydurma.
+- Beklenti haberleri değerlidir: aracı kurumların yaklaşan karar/veri için tahminlerini (ör. "Citi ve Commerzbank 22 Ekim PPK'sında 100 bp indirim bekliyor") tarih ve rakamıyla yaz.
+- "Zirve", "rekor", "tarihi seviye" gibi nitelemeleri YALNIZCA başlıkta aynen geçiyorsa kullan; "gün içi en yüksek" ile "yeni zirve" aynı şey değildir. Başlıkta olmayan zaman ifadesi ("haftanın ilk yarısında", "bugün") ekleme.
+- Somut bir karar, veri veya olay içermeyen yorum/analiz başlıklarını ("... üzerine analiz gündemde", "uzmanlar değerlendirdi") madde yapma. 3 güçlü madde, 5 zayıf maddeden iyidir; uygun madde yoksa boş liste döndür.
 - "-ebilir/-abilir" ile biten tahmin cümleleri ("olumlu duyarlılık yaratabilir", "likiditeyi artırabilir") YASAK; sadece ne olduğunu yaz.
 - Aynı gelişmeyi anlatan başlıkları tek maddede birleştir.
-- subheading: 1-3 kelimelik etiket ("Faiz", "Enflasyon", "Endeks değişikliği", "Küresel", "Regülasyon"). narrative: 1-2 kısa cümle; mümkünse piyasa için anlamını kaynaktaki bilgiyle söyle, spekülasyon yapma.
+- subheading: 1-3 kelimelik etiket: "Faiz", "Enflasyon", "Makro veri", "Endeks değişikliği" (YALNIZCA başlık bir şirketin endekse girdiğini/çıktığını ya da MSCI/FTSE'nin bir sınıflandırma kararını açıkça söylüyorsa; "MSCI Türkiye ... ayrıştı/yükseldi" gibi performans başlıkları endeks değişikliği DEĞİLDİR, gerekirse "Dünkü seans" altında performans olarak yaz), "Dünkü seans", "Küresel", "Regülasyon".
+- Dünkü seansın kapanışı en fazla TEK maddede, başlıktaki rakamlarla yazılabilir ("Dünkü seans: BIST 100 %0,56 düşüşle 12.374 puanda kapandı; bankacılık yükseldi."). Açılış, gün içi ve "yatay seyir" başlıklarından madde yapma. narrative: 1-2 kısa cümle; mümkünse piyasa için anlamını kaynaktaki bilgiyle söyle, spekülasyon yapma.
 - source_ids: maddeyi en iyi destekleyen EN FAZLA 2 başlığın numarası (ör. [2, 5]).
 - Önemli bir gelişme yoksa {"sections": []} döndür.
 
@@ -228,7 +251,7 @@ class GroqProvider(SummarizerProvider):
         )
 
     async def summarize_market(self, headlines: list[NewsItem]) -> list[SynthesizedSection]:
-        lines = ["Son 24 saatin piyasa başlıkları:", ""]
+        lines = [_today_line(), "Son 24 saatin piyasa başlıkları:", ""]
         lines += [f"{i}. {item.title}" for i, item in enumerate(headlines, start=1)]
         parsed = await self._call_with_retry(
             "PIYASA", "piyasa_gundemi", "\n".join(lines), headlines,
@@ -375,6 +398,7 @@ class GroqProvider(SummarizerProvider):
     ) -> tuple[str, list[NewsItem]]:
         codes = ", ".join(f'"{c.value}" ({c.display_name_tr})' for c in NewsCategory)
         lines = [
+            _today_line(),
             f"Ticker: {ticker}",
             "",
             "Bu hissenin TÜM haberleri aşağıda, kural tabanlı ön-kategorileriyle birlikte veriliyor.",
@@ -398,7 +422,7 @@ class GroqProvider(SummarizerProvider):
 
     @staticmethod
     def _build_user_prompt(ticker: str, category: NewsCategory, items: list[NewsItem]) -> str:
-        lines = [f"Ticker: {ticker}", f"Kategori: {category.display_name_tr}", "", "Ham haberler:"]
+        lines = [_today_line(), f"Ticker: {ticker}", f"Kategori: {category.display_name_tr}", "", "Ham haberler:"]
         body_cap = _body_cap(items)
         for i, item in enumerate(items, start=1):
             lines.append(f"{i}. Başlık: {item.title}")

@@ -72,12 +72,20 @@ class MarketBriefConfig(BaseModel):
 
     enabled: bool = True
     queries: list[str] = Field(default_factory=lambda: [
-        "Borsa İstanbul when:1d",
+        # A bare "Borsa İstanbul" query mostly returned school visits, opinion
+        # columns and intraday chatter (2026-10-06 audit log); every query
+        # here names a concrete kind of event instead.
         "TCMB faiz kararı when:1d",
-        "enflasyon TÜİK when:1d",
+        "enflasyon TÜİK açıkladı when:1d",
+        # The user wants the monthly print next to the annual one; headlines
+        # often carry only one of them.
+        "aylık enflasyon TÜFE when:1d",
+        "BIST 100 günü tamamladı when:1d",
         "BIST endeks değişikliği when:1d",
-        "Fed faiz piyasalar when:1d",
-        "SPK karar when:1d",
+        "MSCI Türkiye when:1d",
+        "SPK kurul kararı when:1d",
+        "Fed faiz kararı when:1d",
+        "Türkiye kredi notu when:1d",
     ])
     max_headlines: int = 30
 

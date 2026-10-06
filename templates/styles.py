@@ -24,6 +24,7 @@ C = {
     "bottle": "#2D5A40",
     "navy": "#1A2B4A",
     "amber": "#8B5E1A",
+    "plum": "#5E3A5C",
 }
 
 SERIF = "Georgia,'Times New Roman',Times,serif"
@@ -36,6 +37,7 @@ CATEGORY_COLORS = {
     NewsCategory.NEW_BUSINESS.value: C["bottle"],
     NewsCategory.FINANCIALS.value: C["amber"],
     NewsCategory.KAP_MATERIAL.value: C["navy"],
+    NewsCategory.ANALYST_IR.value: C["plum"],
     NewsCategory.GENERAL_SECTOR.value: C["sepia"],
 }
 

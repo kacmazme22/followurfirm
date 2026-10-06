@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import date
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from scrapers.google_news_scraper import GoogleNewsScraper
 from scrapers.kap_scraper import KapScraper
 from scrapers.models import CompanyReport, DigestRun, RawScrapedItem, SynthesizedCompanyReport
 from templates.styles import template_colors
+from utils.audit import log_inputs, log_outputs
 from utils.email_sender import build_digest_subject, send_digest_email
 
 logger = logging.getLogger(__name__)
@@ -117,8 +119,12 @@ async def _build_company_report(
     )
 
     provider = get_provider(settings)
+    sent_items = [item for _, items in report.ordered_categories() for item in items]
+    log_inputs(ticker.symbol, sent_items)
     try:
-        return await provider.summarize_company_report(report)
+        synthesized = await provider.summarize_company_report(report)
+        log_outputs(ticker.symbol, [s for _, secs in synthesized.ordered_sections() for s in secs], sent_items)
+        return synthesized
     except RuntimeError as exc:
         # LLM synthesis failed (bad/truncated response, invalid JSON, schema
         # mismatch — see GroqProvider's hallucination guards). Fall back to
@@ -131,11 +137,24 @@ async def _build_company_report(
         return await NoopProvider().summarize_company_report(report)
 
 
+class KapUnavailable(Exception):
+    """KAP couldn't be reached and this run was told to require it.
+
+    KAP answers some GitHub runner IPs and not others (unreachable on the
+    2026-10-06 07:00 run, fine the same evening). The early external
+    trigger runs with REQUIRE_KAP=true: rather than mailing a KAP-less
+    digest it exits without sending, so the once-per-day marker isn't set
+    and the next trigger (on a different runner) gets another chance; the
+    last trigger of the morning runs without it and always sends."""
+
+
 async def run_pipeline() -> DigestRun:
     settings = get_settings()
     digest_run = DigestRun()
 
     kap_raw_by_ticker = await fetch_kap_once_and_group(settings.active_bist_tickers, settings, digest_run)
+    if not kap_raw_by_ticker and os.environ.get("REQUIRE_KAP", "").lower() == "true":
+        raise KapUnavailable()
     digest_run.market_brief = await build_market_brief(settings, get_provider(settings))
 
     for ticker in settings.active_bist_tickers:
@@ -199,7 +218,13 @@ if __name__ == "__main__":
         format="%(levelname)s %(name)s: %(message)s",
     )
 
-    result = asyncio.run(run_pipeline())
+    try:
+        result = asyncio.run(run_pipeline())
+    except KapUnavailable:
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        (OUTPUT_DIR / "SKIPPED_NO_KAP").write_text("KAP unreachable; left for the next trigger.\n", encoding="utf-8")
+        print("KAP'a ulaşılamadı ve REQUIRE_KAP=true: mail gönderilmedi, sonraki tetikleme deneyecek.")
+        raise SystemExit(0)
     rendered_html = render_digest_html(result)
     rendered_text = render_digest_text(result)
 

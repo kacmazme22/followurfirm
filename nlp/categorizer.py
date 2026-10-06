@@ -12,6 +12,7 @@ from datetime import datetime
 from dateutil import parser as dateutil_parser
 
 from config.constants import (
+    ANALYST_REPORT_URL_PATHS,
     BOILERPLATE_NOISE_PATTERNS,
     DEFAULT_CATEGORY,
     KAP_KEYWORD_CATEGORY_MAP,
@@ -26,7 +27,10 @@ def categorize(raw_item: RawScrapedItem) -> NewsItem | None:
     category. Returns None if the title matches a known boilerplate/noise
     pattern (KAP auto-generated disclaimer footers) — those are skipped
     entirely rather than assigned any category."""
-    if _is_boilerplate(raw_item.raw_title):
+    # KAP's title is only the filing type ("Genel Kurul İşlemlerine İlişkin
+    # Bildirim"); what the filing is about ("Genel Kurul Kararlarının Tescili
+    # Hk.") is in the summary, so the start of the body is checked too.
+    if _is_boilerplate(raw_item.raw_title) or _is_boilerplate((raw_item.raw_body_snippet or "")[:300]):
         return None
 
     return NewsItem(
@@ -60,6 +64,8 @@ def _determine_category(raw_item: RawScrapedItem) -> NewsCategory:
     """KAP items carry `raw_disclosure_type` — check that first since it's
     the cleaner, purpose-built signal. Falls back to the title for
     non-KAP sources (Bigpara, Google News) that have no disclosure type."""
+    if raw_item.raw_url and any(path in raw_item.raw_url for path in ANALYST_REPORT_URL_PATHS):
+        return NewsCategory.ANALYST_IR
     for text in (raw_item.raw_disclosure_type, raw_item.raw_title):
         if not text:
             continue
