@@ -163,6 +163,7 @@ class CompanyReport(BaseModel):
             NewsCategory.NEW_BUSINESS,
             NewsCategory.FINANCIALS,
             NewsCategory.KAP_MATERIAL,
+            NewsCategory.ANALYST_IR,
             NewsCategory.GENERAL_SECTOR,
         ]
         return [(cat, self.items_by_category[cat]) for cat in order if self.items_by_category.get(cat)]
@@ -193,6 +194,7 @@ class SynthesizedCompanyReport(BaseModel):
             NewsCategory.NEW_BUSINESS,
             NewsCategory.FINANCIALS,
             NewsCategory.KAP_MATERIAL,
+            NewsCategory.ANALYST_IR,
             NewsCategory.GENERAL_SECTOR,
         ]
         return [(cat, self.sections_by_category[cat]) for cat in order if self.sections_by_category.get(cat)]

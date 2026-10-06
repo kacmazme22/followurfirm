@@ -100,3 +100,24 @@ def test_noop_fallback_keeps_only_the_lead():
     body = "Birinci cümle burada bitiyor. " * 30
     lead = _lead(body)
     assert len(lead) <= 280 and lead.endswith(".")
+
+
+@pytest.mark.parametrize("text", [
+    "Koç Holding 2Ç26 yatırımcı sunumu yayımlandı",
+    "Akbank analist toplantısı notları",
+    "HSBC Akbank hedef fiyatını 87 TL'ye indirdi",
+])
+def test_analyst_and_ir_material_has_its_own_category(text):
+    assert _match_keyword_category(text) == NewsCategory.ANALYST_IR
+
+
+def test_broker_report_url_goes_to_analyst_category():
+    from nlp.categorizer import categorize
+    from scrapers.models import RawScrapedItem
+    from config.constants import SourceType
+
+    item = categorize(RawScrapedItem(
+        source=SourceType.BIGPARA, ticker="AKBNK", raw_title="AKBNK YKBNK GARAN düzeltme",
+        raw_url="https://www.bigpara.com/haberler/araci-kurum-raporlari/akbnk-ykbnk-garan-duzeltme-hsbc-t_ID1/",
+    ))
+    assert item.category == NewsCategory.ANALYST_IR

@@ -13,11 +13,12 @@ from enum import Enum
 
 
 class NewsCategory(str, Enum):
-    """The four fixed subheadings every ticker's digest section is grouped into."""
+    """The fixed subheadings every ticker's digest section is grouped into."""
 
     NEW_BUSINESS = "yeni_is_iliskileri"        # Yeni İş İlişkileri & İhaleler
     FINANCIALS = "finansal_sonuclar"           # Finansal Sonuçlar & Bilanço
     KAP_MATERIAL = "onemli_kap_aciklamalari"   # Önemli KAP Açıklamaları
+    ANALYST_IR = "analist_yatirimci"           # Analist Raporları & Yatırımcı Sunumları
     GENERAL_SECTOR = "sektorel_genel_haberler" # Sektörel ve Genel Haberler
 
     @property
@@ -26,6 +27,7 @@ class NewsCategory(str, Enum):
             NewsCategory.NEW_BUSINESS: "Yeni İş İlişkileri & İhaleler",
             NewsCategory.FINANCIALS: "Finansal Sonuçlar & Bilanço",
             NewsCategory.KAP_MATERIAL: "Önemli KAP Açıklamaları",
+            NewsCategory.ANALYST_IR: "Analist Raporları & Yatırımcı Sunumları",
             NewsCategory.GENERAL_SECTOR: "Sektörel ve Genel Haberler",
         }[self]
 
@@ -58,6 +60,22 @@ KAP_KEYWORD_CATEGORY_MAP: dict[str, NewsCategory] = {
     # NEW_BUSINESS below.
     "geri alım": NewsCategory.KAP_MATERIAL,
     "geri alınan pay": NewsCategory.KAP_MATERIAL,
+
+    # Analyst research and investor-relations material (the user asked for
+    # these explicitly: reports, presentations and meeting notes are worth a
+    # line even when only the link is available). Checked before the
+    # business keywords below, which a report headline often also contains.
+    "yatırımcı sunumu": NewsCategory.ANALYST_IR,
+    "analist sunumu": NewsCategory.ANALYST_IR,
+    "analist toplantısı": NewsCategory.ANALYST_IR,
+    "yatırımcı toplantısı": NewsCategory.ANALYST_IR,
+    "yatırımcı günü": NewsCategory.ANALYST_IR,
+    "toplantı notu": NewsCategory.ANALYST_IR,
+    "araştırma raporu": NewsCategory.ANALYST_IR,
+    "şirket raporu": NewsCategory.ANALYST_IR,
+    "hedef fiyat": NewsCategory.ANALYST_IR,
+    "tavsiye": NewsCategory.ANALYST_IR,
+    "analist": NewsCategory.ANALYST_IR,
 
     # New business / tenders / contracts
     "ihale": NewsCategory.NEW_BUSINESS,
@@ -143,6 +161,12 @@ BOILERPLATE_NOISE_PATTERNS: list[str] = [
 ]
 
 DEFAULT_CATEGORY = NewsCategory.GENERAL_SECTOR
+
+# Bigpara files broker research under this path; company-specific reports
+# land in ANALYST_IR by URL even when the headline has no keyword (market-wide
+# "analiz-*" bulletins under the same path are dropped earlier, see
+# nlp/relevance.py).
+ANALYST_REPORT_URL_PATHS = ("/araci-kurum-raporlari/",)
 
 # ---------------------------------------------------------------------------
 # Time-window filtering for sources that have no server-side date filter of

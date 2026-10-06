@@ -12,6 +12,7 @@ from datetime import datetime
 from dateutil import parser as dateutil_parser
 
 from config.constants import (
+    ANALYST_REPORT_URL_PATHS,
     BOILERPLATE_NOISE_PATTERNS,
     DEFAULT_CATEGORY,
     KAP_KEYWORD_CATEGORY_MAP,
@@ -60,6 +61,8 @@ def _determine_category(raw_item: RawScrapedItem) -> NewsCategory:
     """KAP items carry `raw_disclosure_type` — check that first since it's
     the cleaner, purpose-built signal. Falls back to the title for
     non-KAP sources (Bigpara, Google News) that have no disclosure type."""
+    if raw_item.raw_url and any(path in raw_item.raw_url for path in ANALYST_REPORT_URL_PATHS):
+        return NewsCategory.ANALYST_IR
     for text in (raw_item.raw_disclosure_type, raw_item.raw_title):
         if not text:
             continue

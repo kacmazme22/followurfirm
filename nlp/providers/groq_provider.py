@@ -159,6 +159,11 @@ DAHİL ET: sözleşme/sipariş/ihale, yatırım/tesis/kapasite, satın alma/birl
 
 DIŞLA: teknik analiz ve fiyat seviyeleri, günlük fiyat/hacim/açığa satış verisi, blok alım-satım akışı, model portföy ağırlıkları; uyum raporları, yönetim kurulu toplantı/katılım istatistikleri, komite listeleri, form alanları ("güncelleme mi, düzeltme mi, ertelenmiş mi"), sorumluluk beyanları; somut karar veya rakam içermeyen yönetici röportaj/konferans sözleri; çok şirketli raporlarda diğer şirketlerin bilgileri.
 
+ANALİST RAPORLARI VE YATIRIMCI SUNUMLARI (okuyucu için çok değerli, asla atlama):
+- Metin varsa: kurumu, hedef fiyatı (öncekiyle birlikte), tavsiyeyi, tahmin değişikliklerini ve raporun/sunumun ana tezini 2-5 cümlede özetle.
+- Yalnızca başlık varsa: kim neyi yayımladı, tek cümle; başlıkta olmayan rakam ya da tez EKLEME. Ör.: "Ak Yatırım, Akbank için yeni bir şirket raporu yayımladı." Okuyucu linkten açacak.
+- subheading: "Analist raporu", "Yatırımcı sunumu", "Toplantı notu" veya "Hedef fiyat".
+
 YAZIM:
 - subheading: 1-3 kelimelik olay etiketi ("Yeni iş", "Geri alım", "Temettü", "Varlık satışı", "Satın alma", "Yatırım", "Finansal sonuç", "Borçlanma", "Yönetim", "Ortaklık yapısı", "Patent", "Analist görüşü", "Dava").
 - narrative: uzunluğu haberdeki bilgiye göre belirle; kısa yazmak için bilgi atma, uzatmak için dolgu ekleme. Basit bir olay (tek atama, tek patent) 1-2 cümle; çok parçalı bir olay (finansal sonuç, büyük sözleşme, birleşme, analist raporu, geri alım programı) yatırımcının ihtiyaç duyduğu tüm rakamlarla 3-5 cümle. Önce olay ve büyüklüğü (tutar, adet, oran, fiyat aralığı, karşı taraf, tarih), sonra kritik detaylar (vade, finansman, devreye alma, kârın kullanımı, öncekiyle karşılaştırma). Örnek: "Azerenerji (Azerbaycan) ile 250 MWh batarya depolama tesisi için 58,6 mn $'lık EPC-F sözleşmesi imzalandı. Finansman 4 yıl geri ödemeli, tesis 1 yıl içinde devreye girecek."
@@ -170,7 +175,7 @@ RAKAM DOĞRULUĞU (en önemli kural):
 - SADECE kaynakta geçen isim, kurum ve rakamları kullan; hiçbir şey uydurma, tahmin etme.
 - Rakamı kaynaktaki birimiyle aktar. Kısaltma yalnızca kesinse: 58.600.000 -> 58,6 mn; 1.500.000.000 -> 1,5 mlr. Birim belirsizse (milyon mu milyar mı) kaynaktaki yazımı aynen kullan; aynı tutarı iki farklı birimle ASLA yazma.
 - Bir tarihin ne olduğu (ihraç, vade, ödeme) kaynakta açık değilse o tarihi yazma.
-- Bir haberin özü bir rakamsa (hedef fiyat, tutar) ve kaynakta o rakam yoksa, o maddeyi hiç yazma. "(metin yok, yalnızca başlık)" işaretli haberlerde bilgi sadece başlıktan ibarettir; başlıkta olmayan hiçbir şeyi yazma.
+- Bir haberin özü bir rakamsa (tutar, oran) ve kaynakta o rakam yoksa, o maddeyi hiç yazma. İSTİSNA: analist raporu, yatırımcı sunumu, analist/yatırımcı toplantısı ve toplantı notları — bunları rakam olmasa da HER ZAMAN yaz (aşağıya bak). "(metin yok, yalnızca başlık)" işaretli haberlerde bilgi sadece başlıktan ibarettir; başlıkta olmayan hiçbir şeyi yazma.
 - Hiçbir haber kriterlere uymuyorsa {"sections": []} döndür; boş bölüm dolgu metinden iyidir.
 
 Çıktıyı SADECE JSON olarak ver ("category" ve "kisaca" alanlarını yalnızca kullanıcı mesajı isterse ekle):
