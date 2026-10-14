@@ -43,11 +43,12 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
-from config.constants import MAX_ARTICLES_TO_ENRICH_PER_TICKER, NEWS_LOOKBACK_HOURS, SourceType
+from config.constants import MAX_ARTICLES_TO_ENRICH_PER_TICKER, SourceType
 from config.settings import BigparaSourceConfig, TickerConfig
 from scrapers.base import BaseScraper
 from nlp.relevance import filter_relevant
 from scrapers.models import RawScrapedItem
+from utils.memory import news_lookback_hours
 from utils.article_fetcher import fetch_article_body
 
 logger = logging.getLogger(__name__)
@@ -123,7 +124,7 @@ class BigparaScraper(BaseScraper):
         response = await self._get(url)
         soup = BeautifulSoup(response.text, "html.parser")
 
-        cutoff = datetime.now() - timedelta(hours=NEWS_LOOKBACK_HOURS)
+        cutoff = datetime.now() - timedelta(hours=news_lookback_hours())
 
         cards = soup.select(NEWS_CARD_SELECTOR)
         items: list[RawScrapedItem] = []

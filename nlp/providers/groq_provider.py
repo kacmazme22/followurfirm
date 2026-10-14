@@ -191,8 +191,10 @@ YAZIM:
 - subheading: 1-3 kelimelik olay etiketi ("Yeni iş", "Geri alım", "Temettü", "Varlık satışı", "Satın alma", "Yatırım", "Finansal sonuç", "Borçlanma", "Yönetim", "Ortaklık yapısı", "Patent", "Analist görüşü", "Dava").
 - narrative: uzunluğu haberdeki bilgiye göre belirle; kısa yazmak için bilgi atma, uzatmak için dolgu ekleme. Basit bir olay (tek atama, tek patent) 1-2 cümle; çok parçalı bir olay (finansal sonuç, büyük sözleşme, birleşme, analist raporu, geri alım programı) yatırımcının ihtiyaç duyduğu tüm rakamlarla 3-5 cümle. Önce olay ve büyüklüğü (tutar, adet, oran, fiyat aralığı, karşı taraf, tarih), sonra kritik detaylar (vade, finansman, devreye alma, kârın kullanımı, öncekiyle karşılaştırma). Örnek: "Azerenerji (Azerbaycan) ile 250 MWh batarya depolama tesisi için 58,6 mn $'lık EPC-F sözleşmesi imzalandı. Finansman 4 yıl geri ödemeli, tesis 1 yıl içinde devreye girecek."
 - Okuyucu linke tıklamadan anlamalı: haberin özündeki rakamı (hedef fiyat ve önceki değeri, tavsiye, tutar, oran) mutlaka yaz. "Yeni hedef fiyatını duyurdu" gibi rakamsız bir cümle YASAK.
+- Olayları belirli geçmiş zamanla (-di) ya da gelecek zamanla yaz: "açıkladı", "ödeyecek". Duyulan geçmiş zaman (-miş: "açıklamış", "sunmuş") KULLANMA.
 - Ham metni kopyalama; bildirim dilini ("Şirketimiz", "kamuoyuna duyurulur") ve içi boş yorumları ("dikkat çekecek", "önem taşımaktadır", "olumlu etki") yazma.
 - AYNI OLAY = TEK MADDE: bir olayın KAP bildirimi ve onu aktaran haberler (ör. Rekabet Kurulu cezasının KAP açıklaması + "Akbank'a 1,7 milyar TL ceza" haberleri; bilanço tarihinin KAP finansal takvimi + "bilançoyu 27 Ekim'de açıklayacak" haberleri) tek maddedir. Farklı kaynaklarda farklı yazılmış aynı tutar (1.713.897.558 TL = 1,7 milyar TL) AYNI rakamdır: ASLA toplama, iki ayrı olay sanma.
+- Aracı kurumların kâr/hedef fiyat tahminleri "Analist raporu"dur, "Finansal sonuç" değildir; "Finansal sonuç" yalnızca şirketin kendi açıkladığı sonuçlardır.
 - Röportaj, demeç ve görüş yazıları analist raporu DEĞİLDİR; etiketleri "Röportaj". Etiketi kurum adı yapma ("İş Yatırım" değil "Analist raporu"). Metne "(içerik detaylandırılmamış)", "(rakamlar haberde yer almıyor)" gibi parantez içi açıklama ekleme.
 - Aynı TÜRDEKİ farklı olaylara (ör. iki ayrı borçlanma) AYNI etiketi ver; bunlar tek başlık altında ayrı paragraflar olarak gösterilecek.
 - Rakamları Türkçe yaz: "30 mlr TL", "173,8 mn TL", ondalık için virgül; "30,000,000,000", "TRY", "Oct" gibi İngilizce biçimler YASAK.
@@ -203,10 +205,11 @@ RAKAM DOĞRULUĞU (en önemli kural):
 - SADECE kaynakta geçen isim, kurum ve rakamları kullan; hiçbir şey uydurma, tahmin etme.
 - Rakamı kaynaktaki birimiyle aktar. Kısaltma yalnızca kesinse: 58.600.000 -> 58,6 mn; 1.500.000.000 -> 1,5 mlr. Birim belirsizse (milyon mu milyar mı) kaynaktaki yazımı aynen kullan; aynı tutarı iki farklı birimle ASLA yazma.
 - Bir tarihin ne olduğu (ihraç, vade, ödeme) kaynakta açık değilse o tarihi yazma.
+- Dönem kısaltmaları: "3Ç26" = 2026 3. çeyrek, "2Ç25" = 2025 2. çeyrek, "9A26" = 2026 ilk 9 ay. "01.01.2026-30.09.2026" dönemi = 2026 3. çeyrek (9 aylık). Dönemi tek yılla yaz ("2026 3. çeyrek"), yıl aralığı yazma.
 - Tarihleri kullanıcı mesajındaki "Bugünün tarihi" ile karşılaştır: geçmişteki bir olayı (yapılmış genel kurul, ödenmiş temettü) gelecek zamanla YAZMA; tescil/sonuç bildirimini "yapılacak" diye sunma.
 - Borçlanma bildirimlerinde ihraç TAVANI/limiti ile fiilen satılan (nominal) tutarı ayır; "ihraç etti" diye yalnızca satılan tutarı yaz, tavanı ancak ayrıca belirt. Yönetim kurulu/SPK onay tarihleri gibi süreç tarihlerini yazma. Tahvil ihracında yalnızca okuyucunun işine yarayanı yaz: satılan tutar, vade (tarih ya da gün), faiz/getiri ve kime satıldığı; ISIN, fiyat, iskonto oranı, kupon sayısı gibi teknik alanları YAZMA. Ör.: "173,75 mn TL'lik, 6 Aralık 2027 vadeli, %40 faizli tahvili nitelikli yatırımcılara sattı."
 - Formdaki tutarlar kodla Türkçe kısaltmaya çevrilmiş gelir ("30 mlr", "173,75 mn"); bunları AYNEN kullan, yeniden çevirme.
-- Bir haberin özü bir rakamsa (tutar, oran) ve kaynakta o rakam yoksa, o maddeyi hiç yazma. İSTİSNALAR (rakam olmasa da HER ZAMAN yaz): (1) analist raporu, yatırımcı sunumu, analist/yatırımcı toplantısı ve toplantı notları (aşağıya bak); (2) temettü, bedelsiz, geri alım ve genel kurul haberleri: başlıkta tarih veya olay varsa (ör. "16 Ekim'de ödenecek", "yarın temettüsüz işlem görecek") yalnızca başlıktaki olguyu yaz, ör. "Temettü 16 Ekim'de ödenecek; hisse 15 Ekim'de temettüsüz işlem görecek. Tutar habere göre linkte."; (3) kaynağı "kap" olan önemli bildirimler (borçlanma/tahvil ihracı, sözleşme, yatırım, satın alma/satış, temettü, geri alım, sermaye artırımı, yönetim/ortaklık değişikliği, dava): detay yoksa tek cümleyle ne olduğunu yaz, ör. "Yurtdışı piyasalarda tahvil ihracı yaptı; tutar ve vade KAP bildiriminde." Okuyucu linkten açar. "(metin yok, yalnızca başlık)" işaretli haberlerde bilgi sadece başlıktan ibarettir; başlıkta olmayan hiçbir şeyi yazma.
+- Bir haberin özü bir rakamsa (tutar, oran) ve kaynakta o rakam yoksa, o maddeyi hiç yazma. İSTİSNALAR (rakam olmasa da HER ZAMAN yaz): (1) analist raporu, yatırımcı sunumu, analist/yatırımcı toplantısı ve toplantı notları (aşağıya bak); (2) temettü, bedelsiz, geri alım ve genel kurul haberleri: başlıkta tarih veya olay varsa (ör. "16 Ekim'de ödenecek", "yarın temettüsüz işlem görecek") yalnızca başlıktaki olguyu yaz, ör. "Temettü 16 Ekim'de ödenecek; hisse 15 Ekim'de temettüsüz işlem görecek. Tutar habere göre linkte."; (3) kaynağı "kap" olan önemli bildirimler (borçlanma/tahvil ihracı, sözleşme, yatırım, satın alma/satış, temettü, geri alım, sermaye artırımı, yönetim/ortaklık değişikliği, dava): detay yoksa tek cümleyle ne olduğunu yaz, ör. "Yurtdışı piyasalarda tahvil ihracı yaptı." Okuyucu linkten açar. "KAP bildiriminde yer alıyor", "(başlık duyurusu)", "henüz belirtilmedi" gibi kaynağa gönderme yapan ifadeler YAZMA. "(metin yok, yalnızca başlık)" işaretli haberlerde bilgi sadece başlıktan ibarettir; başlıkta olmayan hiçbir şeyi yazma.
 - Yalnızca bildirim türünü söyleyen başlıklardan ("... Genel Kurul İşlemlerine İlişkin Bildirim", "... Özel Durum Açıklaması") içerik yoksa madde yazma; "KAP bildiriminde bulundu" gibi içi boş cümle YASAK.
 - Hiçbir haber kriterlere uymuyorsa {"sections": []} döndür; boş bölüm dolgu metinden iyidir.
 
@@ -253,6 +256,20 @@ class _Parsed(NamedTuple):
     summary: str | None
 
 
+# Groq's free tier limits tokens per day per model (200k for gpt-oss-120b).
+# On 2026-10-14 a series of test runs used it up and the next run fell back
+# to the raw list; the 07:00 mail would have too. When a model's daily quota
+# is reached, the remaining calls of the run go to the next model, which has
+# a quota of its own.
+FALLBACK_MODELS = ("openai/gpt-oss-20b", "llama-3.3-70b-versatile")
+_EXHAUSTED_MODELS: set[str] = set()
+
+
+def _is_daily_quota(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "per day" in text or "(tpd)" in text or "(rpd)" in text
+
+
 class GroqProvider(SummarizerProvider):
     def __init__(self, settings: AppConfig, max_tokens: int = DEFAULT_MAX_TOKENS) -> None:
         self._client = AsyncGroq(api_key=settings.env.groq_api_key)
@@ -279,20 +296,38 @@ class GroqProvider(SummarizerProvider):
             sections_by_category=sections_by_category,
         )
 
+    def _current_model(self) -> str | None:
+        return next((m for m in (self._model, *FALLBACK_MODELS) if m not in _EXHAUSTED_MODELS), None)
+
     async def _create(self, **kwargs):
-        """chat.completions.create with low reasoning effort; if the API
-        rejects the parameter (older model/SDK), it's dropped for the rest
-        of the run and the call is repeated without it."""
+        """chat.completions.create on the first model whose daily token
+        quota isn't used up (see FALLBACK_MODELS)."""
+        while True:
+            model = self._current_model()
+            if model is None:
+                raise RuntimeError("Groq: tüm modellerin günlük token kotası doldu")
+            try:
+                return await self._create_with(model, **kwargs)
+            except groq.RateLimitError as exc:
+                if not _is_daily_quota(exc):
+                    raise
+                _EXHAUSTED_MODELS.add(model)
+                logger.warning("Groq %s günlük token kotası doldu, sonraki model: %s", model, self._current_model())
+
+    async def _create_with(self, model: str, **kwargs):
+        """With low reasoning effort; if the API rejects the parameter (a
+        model without reasoning, older SDK), it's dropped for the rest of
+        the run and the call is repeated without it."""
         effort = getattr(self, "_reasoning_effort", REASONING_EFFORT)
         if effort:
             try:
-                return await self._client.chat.completions.create(model=self._model, reasoning_effort=effort, **kwargs)
+                return await self._client.chat.completions.create(model=model, reasoning_effort=effort, **kwargs)
             except (groq.BadRequestError, TypeError) as exc:
                 if "reasoning" not in str(exc).lower():
                     raise
-                logger.warning("reasoning_effort desteklenmiyor, parametresiz devam: %s", exc)
+                logger.warning("reasoning_effort desteklenmiyor (%s), parametresiz devam: %s", model, exc)
                 self._reasoning_effort = None
-        return await self._client.chat.completions.create(model=self._model, **kwargs)
+        return await self._client.chat.completions.create(model=model, **kwargs)
 
     async def pick_headline(self, candidates: list[str]) -> str | None:
         """The user wanted the subject to open with the day's most striking

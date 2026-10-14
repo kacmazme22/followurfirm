@@ -13,6 +13,7 @@ GitHub's runners.
 from __future__ import annotations
 
 import logging
+import re
 
 from scrapers.models import NewsItem, SynthesizedSection
 
@@ -36,6 +37,17 @@ def log_inputs(label: str, items: list[NewsItem]) -> None:
         logger.info("[%s] girdi %d (%s): %s | %s", label, i, item.source.value, item.title, body)
 
 
+_YEAR = re.compile(r"\b20\d\d\b")
+
+
+def _unsourced_years(sections: list[SynthesizedSection], items: list[NewsItem]) -> set[str]:
+    """Years in the output that appear in no input: the model wrote "2026-2027
+    üçüncü çeyrek" for a 2026 quarter (2026-10-14)."""
+    source_text = " ".join(f"{i.title} {i.body_snippet or ''}" for i in items)
+    known = set(_YEAR.findall(source_text))
+    return {y for s in sections for y in _YEAR.findall(s.narrative)} - known
+
+
 def log_outputs(label: str, sections: list[SynthesizedSection], items: list[NewsItem]) -> None:
     titles_by_url: dict[str, str] = {}
     for item in items:
@@ -47,3 +59,6 @@ def log_outputs(label: str, sections: list[SynthesizedSection], items: list[News
         logger.info(
             "[%s] çıktı «%s» <- %s", label, section.subheading, " || ".join(cited) if cited else "(kaynak yok)"
         )
+    unsourced = _unsourced_years(sections, items)
+    if unsourced:
+        logger.warning("[%s] kaynakta olmayan yıl(lar) çıktıda: %s", label, ", ".join(sorted(unsourced)))

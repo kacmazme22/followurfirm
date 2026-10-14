@@ -28,12 +28,14 @@ from nlp.providers.noop_provider import NoopProvider
 from scrapers.bigpara_scraper import BigparaScraper
 from scrapers.bing_news_scraper import BingNewsScraper
 from scrapers.google_news_scraper import GoogleNewsScraper
+from scrapers.ir_scraper import IrPageScraper
 from scrapers.kap_scraper import KapScraper
 from scrapers.models import CompanyReport, DigestRun, RawScrapedItem, SynthesizedCompanyReport
 from templates.styles import template_colors
 from utils.audit import log_inputs, log_outputs
 from utils.formatting import polish_report, turkish_numbers
 from utils.email_sender import build_digest_subject, send_digest_email
+from utils.memory import DigestMemory, load_memory
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +112,7 @@ async def _build_company_report(
     kap_raw_by_ticker: dict[str, list[RawScrapedItem]],
     settings: AppConfig,
     digest_run: DigestRun,
+    memory: DigestMemory,
 ) -> SynthesizedCompanyReport:
     raw_items: list[RawScrapedItem] = list(kap_raw_by_ticker.get(ticker.symbol, []))
 
@@ -133,9 +136,26 @@ async def _build_company_report(
     if google_result.error:
         digest_run.add_error(SourceType.GOOGLE_NEWS, ticker.symbol, google_result.error)
 
+    ir_pages = settings.yaml.sources.company_ir_pages
+    if ir_pages.enabled:
+        kap_company_url = next(
+            (i.extra["kap_company_url"] for i in kap_raw_by_ticker.get(ticker.symbol, []) if i.extra.get("kap_company_url")),
+            None,
+        )
+        ir_result = await IrPageScraper(
+            ticker, memory, _GOOGLE_NEWS_POLITENESS,
+            pinned_pages=ir_pages.urls.get(ticker.symbol), kap_company_url=kap_company_url,
+        ).run()
+        raw_items += ir_result.items
+        if ir_result.error:
+            digest_run.add_error(SourceType.COMPANY_IR, ticker.symbol, ir_result.error)
+
     raw_items = _drop_mirrored_filings(raw_items, ticker.symbol)
     news_items = categorize_batch(raw_items)  # boilerplate items already dropped (None -> skipped)
     news_items = deduplicate(news_items)
+    if settings.yaml.sources.bing_news.enabled:
+        await BingNewsScraper(ticker, settings.yaml.sources.bing_news, _GOOGLE_NEWS_POLITENESS).fill_headline_only(news_items)
+    news_items = memory.drop_reported(news_items, ticker.symbol)
 
     report = CompanyReport(ticker=ticker.symbol, company_name=ticker.name)
     for item in news_items:
@@ -148,9 +168,11 @@ async def _build_company_report(
 
     provider = get_provider(settings)
     sent_items = [item for _, items in report.ordered_categories() for item in items]
+    memory.note_inputs(ticker.symbol, sent_items)
     log_inputs(ticker.symbol, sent_items)
     try:
-        synthesized = polish_report(await provider.summarize_company_report(report))
+        source_text = " ".join(f"{i.title} {i.body_snippet or ''}" for i in sent_items)
+        synthesized = polish_report(await provider.summarize_company_report(report), source_text)
         log_outputs(ticker.symbol, [s for _, secs in synthesized.ordered_sections() for s in secs], sent_items)
         return synthesized
     except RuntimeError as exc:
@@ -176,9 +198,12 @@ class KapUnavailable(Exception):
     last trigger of the morning runs without it and always sends."""
 
 
-async def run_pipeline() -> DigestRun:
+async def run_pipeline(memory: DigestMemory | None = None) -> DigestRun:
+    """`memory` is filled in as a side effect: run_pipeline only filters with
+    it; the caller records and saves it once the mail has gone out."""
     settings = get_settings()
     digest_run = DigestRun()
+    memory = memory if memory is not None else load_memory(enabled=False)
 
     kap_raw_by_ticker = await fetch_kap_once_and_group(settings.active_bist_tickers, settings, digest_run)
     if not kap_raw_by_ticker and os.environ.get("REQUIRE_KAP", "").lower() == "true":
@@ -187,7 +212,7 @@ async def run_pipeline() -> DigestRun:
 
     for ticker in settings.active_bist_tickers:
         try:
-            report = await _build_company_report(ticker, kap_raw_by_ticker, settings, digest_run)
+            report = await _build_company_report(ticker, kap_raw_by_ticker, settings, digest_run, memory)
             digest_run.company_reports.append(report)
         except Exception as exc:  # one ticker blowing up must not sink the rest
             logger.error("Ticker %s failed entirely: %s", ticker.symbol, exc, exc_info=True)
@@ -259,8 +284,9 @@ if __name__ == "__main__":
         format="%(levelname)s %(name)s: %(message)s",
     )
 
+    memory = load_memory(enabled=os.environ.get("IGNORE_MEMORY", "").lower() != "true")
     try:
-        result = asyncio.run(run_pipeline())
+        result = asyncio.run(run_pipeline(memory))
     except KapUnavailable:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         (OUTPUT_DIR / "SKIPPED_NO_KAP").write_text("KAP unreachable; left for the next trigger.\n", encoding="utf-8")
@@ -277,3 +303,7 @@ if __name__ == "__main__":
 
     subject = build_digest_subject(settings, headline=result.headline)
     send_digest_email(rendered_html, subject, settings.yaml.recipients, settings, text_content=rendered_text)
+
+    # Written on every run; the workflow only caches it after a real send.
+    memory.record(result)
+    memory.save()

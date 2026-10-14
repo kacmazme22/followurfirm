@@ -16,3 +16,4 @@ googlenewsdecoder>=0.1.7  # utils/article_fetcher.py — resolves Google News RS
 # that googlenewsdecoder still imports — unpinned, it crashed every run at
 # import time. Drop this pin once googlenewsdecoder moves to selectolax.lexbor.
 selectolax<1.0
+pypdf>=5.0        # scrapers/kap_scraper.py — text of PDF attachments on KAP filings

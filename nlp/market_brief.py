@@ -156,6 +156,19 @@ async def fetch_market_headlines(settings: AppConfig) -> list[NewsItem]:
 _COMPOSITION_WORDS = ("endekse", "endeksten", "dahil edil", "çıkarıl", "msci", "ftse", "bileşim", "endeks değişikliği")
 
 
+_INDEX_CLOSE = re.compile(r"BIST|endeks|puan", re.IGNORECASE)
+
+
+def _keep_index_close_only(sections: list[SynthesizedSection]) -> None:
+    """"Dünkü seans" is the index close. On 2026-10-14 a single stock's
+    capital increase was filed under it too and merged into one bullet."""
+    for section in sections:
+        if section.subheading.lower().startswith("dünkü seans"):
+            paragraphs = [p for p in section.narrative.split("\n\n") if _INDEX_CLOSE.search(p)]
+            if paragraphs:
+                section.narrative = paragraphs[0]
+
+
 def _fix_index_change_labels(sections: list[SynthesizedSection], headlines: list[NewsItem]) -> None:
     titles_by_url = {str(h.url): tr_lower(h.title) for h in headlines if h.url}
     for section in sections:
@@ -180,6 +193,7 @@ async def build_market_brief(settings: AppConfig, provider: SummarizerProvider) 
             section.source_urls = section.source_urls[:MAX_LINKS_PER_ITEM]
         _fix_index_change_labels(sections, headlines)
         sections = polish_sections(sections)
+        _keep_index_close_only(sections)
         log_outputs("PIYASA", sections, headlines)
         return sections
     except Exception as exc:  # the box is optional; never sink the digest

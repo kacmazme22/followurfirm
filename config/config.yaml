@@ -34,7 +34,7 @@ recipients:
   - "ediz.kacmaz19@gmail.com"
 
 schedule:
-  cron_utc: "17 4 * * *"   # 07:17 Europe/Istanbul (UTC+3); off-minute on purpose, see daily_digest.yml
+  cron_utc: "0 4 * * *"   # informational only: cron-job.org triggers 07:00 and 07:30 Europe/Istanbul (README)
   timezone_display: "Europe/Istanbul"
 
 sources:
@@ -71,7 +71,11 @@ sources:
     country: "TR"
 
   company_ir_pages:
-    enabled: false  # opt-in per ticker once IR page URLs are curated
+    enabled: true
+    # Each ticker's IR site is found automatically (scrapers/ir_scraper.py);
+    # nothing to add here for a new ticker. Only to pin pages by hand:
+    #   urls:
+    #     AKBNK: ["https://www.akbankinvestorrelations.com/tr"]
     urls: {}
 
   web_search_fallback:

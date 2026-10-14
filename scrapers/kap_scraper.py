@@ -31,6 +31,7 @@ Two ways to use this scraper:
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, timedelta
 
 from config.constants import SourceType
@@ -38,6 +39,8 @@ from config.settings import KapSourceConfig, TickerConfig
 from scrapers.base import BaseScraper
 from scrapers.models import RawScrapedItem
 from utils.article_fetcher import structured_text
+from utils.memory import kap_lookback_days
+from utils.pdf_text import pdf_text
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +66,23 @@ DISCLOSURE_DETAIL_URL_TEMPLATE = "https://www.kap.org.tr/tr/Bildirim/{disclosure
 # appear in two consecutive digests. A wide window that may repeat beats a
 # tight one that risks silently dropping a disclosure at the day boundary.
 LOOKBACK_DAYS = 2
+
+
+# Attachments are read only where the page itself says little: a filing
+# whose whole content is "Yatırımcı sunumumuz ekte sunulmuştur", or one about
+# a presentation/report/results whatever its text.
+_ATTACHMENT_LINK = re.compile(r"/tr/api/file/download/[a-f0-9]{32}")
+# Link from a filing to the company's KAP page, which lists its website
+# (used to find the investor-relations site, scrapers/ir_scraper.py).
+_COMPANY_PAGE = re.compile(r"/tr/sirket-bilgileri/(?:ozet|genel)/[\w-]+")
+_ATTACHMENT_SUBJECT = re.compile(r"sunum|rapor|sonuç|faaliyet|analist|yatırımcı", re.IGNORECASE)
+MIN_TEXT_WITHOUT_ATTACHMENT = 300
+MAX_ATTACHMENT_BYTES = 15_000_000
+
+
+def _needs_attachment(item: RawScrapedItem, text: str | None) -> bool:
+    subject = f"{item.raw_title} {item.raw_body_snippet or ''}"
+    return len(text or "") < MIN_TEXT_WITHOUT_ATTACHMENT or bool(_ATTACHMENT_SUBJECT.search(subject[:300]))
 
 
 class KapScraper(BaseScraper):
@@ -105,7 +125,7 @@ class KapScraper(BaseScraper):
         buyback tables from it), so the tracked companies' filings get their
         full form as "Etiket: Değer" lines, see utils/article_fetcher.py.
         Both host spellings are tried: KapMail uses kap.org.tr without www."""
-        fetched = 0
+        fetched = attachments = 0
         for item in items:
             index = item.extra.get("disclosure_index")
             if index is None:
@@ -118,16 +138,42 @@ class KapScraper(BaseScraper):
                 except Exception as exc:
                     logger.info("KAP detay alınamadı (%s): %s: %s", url, type(exc).__name__, exc)
                     continue
+                company_page = _COMPANY_PAGE.search(response.text)
+                if company_page:
+                    item.extra["kap_company_url"] = f"{host}{company_page.group(0)}"
                 text = structured_text(response.text, url)
+                if _needs_attachment(item, text):
+                    attachment = await self._attachment_text(host, response.text)
+                    if attachment:
+                        text = f"{text or ''}\nEk (PDF): {attachment}".strip()
+                        attachments += 1
                 if text and len(text) > len(item.raw_body_snippet or ""):
                     item.raw_body_snippet = text[:MAX_DETAIL_CHARS]
                     fetched += 1
                 break
-        logger.info("KAP: %d/%d bildirimin detay sayfası okundu", fetched, len(items))
+        logger.info(
+            "KAP: %d/%d bildirimin detay sayfası okundu, %d PDF eki okundu", fetched, len(items), attachments
+        )
+
+    async def _attachment_text(self, host: str, html: str) -> str | None:
+        match = _ATTACHMENT_LINK.search(html)
+        if not match:
+            return None
+        url = f"{host}{match.group(0)}"
+        try:
+            response = await self._get(url, headers=dict(BROWSER_HEADERS))
+            response.raise_for_status()
+        except Exception as exc:
+            logger.info("KAP eki indirilemedi (%s): %s: %s", url, type(exc).__name__, exc)
+            return None
+        if len(response.content) > MAX_ATTACHMENT_BYTES:
+            logger.info("KAP eki çok büyük, atlandı (%d bayt): %s", len(response.content), url)
+            return None
+        return pdf_text(response.content)
 
     async def _fetch_disclosures_json(self) -> list[dict]:
         today = date.today()
-        from_date = today - timedelta(days=LOOKBACK_DAYS)
+        from_date = today - timedelta(days=max(LOOKBACK_DAYS, kap_lookback_days()))
 
         url = f"{self.source_config.base_url}{self.source_config.disclosure_endpoint}"
         body = {

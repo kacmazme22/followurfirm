@@ -104,7 +104,9 @@ class MarketBriefConfig(BaseModel):
 
 class CompanyIrPagesConfig(BaseModel):
     enabled: bool = False
-    urls: dict[str, str] = Field(default_factory=dict)
+    # Optional ticker -> pinned IR pages; without an entry the pages are
+    # found by search (scrapers/ir_scraper.py).
+    urls: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class WebSearchFallbackConfig(BaseModel):
