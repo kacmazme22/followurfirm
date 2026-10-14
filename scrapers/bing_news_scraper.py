@@ -21,12 +21,14 @@ from urllib.parse import parse_qs, quote, urlparse
 
 import feedparser
 from bs4 import BeautifulSoup
+from rapidfuzz import fuzz
 
-from config.constants import MAX_ARTICLES_TO_ENRICH_PER_TICKER, NEWS_LOOKBACK_HOURS, SourceType
+from config.constants import MAX_ARTICLES_TO_ENRICH_PER_TICKER, SourceType
 from config.settings import BingNewsConfig, PolitenessConfig, TickerConfig
 from nlp.relevance import filter_relevant
 from scrapers.base import BaseScraper
-from scrapers.models import RawScrapedItem
+from scrapers.models import NewsItem, RawScrapedItem
+from utils.memory import news_lookback_hours
 from utils.article_fetcher import fetch_article_body
 
 logger = logging.getLogger(__name__)
@@ -47,8 +49,19 @@ def real_article_url(link: str | None) -> str | None:
     return link
 
 
-def feed_url(query: str, config: BingNewsConfig) -> str:
-    return f"{BING_NEWS_RSS_BASE}?q={quote(query)}&format=rss&setlang={config.language}&cc={config.country}"
+# Newest first: by relevance, 10-12 of a company's 12 results were older
+# than the look-back window (2026-10-14).
+SORT_BY_DATE = "&qft=" + quote('sortbydate="1"')
+
+# Google News headlines arrive without text (its links can't be decoded);
+# the same story is usually on Bing too, with the publisher URL.
+TITLE_MATCH_SIMILARITY = 85
+MAX_BODY_LOOKUPS_PER_TICKER = 5
+
+
+def feed_url(query: str, config: BingNewsConfig, newest_first: bool = True) -> str:
+    url = f"{BING_NEWS_RSS_BASE}?q={quote(query)}&format=rss&setlang={config.language}&cc={config.country}"
+    return url + SORT_BY_DATE if newest_first else url
 
 
 def description_text(entry) -> str | None:
@@ -76,7 +89,7 @@ class BingNewsScraper(BaseScraper):
         response = await self._get(feed_url(query, self.source_config))
         feed = feedparser.parse(response.text)
 
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=NEWS_LOOKBACK_HOURS)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=news_lookback_hours())
         items: list[RawScrapedItem] = []
         skipped = 0
         for entry in feed.entries:
@@ -102,6 +115,49 @@ class BingNewsScraper(BaseScraper):
         items = filter_relevant(items, self.ticker)
         await self._enrich_with_article_bodies(items)
         return items
+
+    async def fill_headline_only(self, items: list[NewsItem]) -> None:
+        """For headline-only items (Google News), finds the same headline on
+        Bing and takes its publisher link, description and article text."""
+        targets = [i for i in items if not i.body_snippet and i.source == SourceType.GOOGLE_NEWS]
+        if not targets:
+            return
+        try:
+            async with self._client_session():
+                found = await self._lookup(targets[:MAX_BODY_LOOKUPS_PER_TICKER])
+        except Exception as exc:  # optional enrichment: never fails the ticker
+            logger.warning("%s: Bing başlık araması durdu: %s", self.ticker.symbol, exc)
+            return
+        logger.info(
+            "%s: yalnızca başlık olan %d Google haberinin %d tanesine Bing'den metin bulundu",
+            self.ticker.symbol, len(targets), found,
+        )
+
+    async def _lookup(self, targets: list[NewsItem]) -> int:
+        found = 0
+        for item in targets:
+            try:
+                response = await self._get(feed_url(f'"{item.title}"', self.source_config, newest_first=False))
+            except Exception as exc:
+                logger.info("Bing başlık araması başarısız (%s): %s", item.title, exc)
+                continue
+            entries = feedparser.parse(response.text).entries
+            best = max(
+                entries, key=lambda e: fuzz.token_set_ratio(e.get("title", ""), item.title), default=None
+            )
+            if best is None or fuzz.token_set_ratio(best.get("title", ""), item.title) < TITLE_MATCH_SIMILARITY:
+                continue
+            url = real_article_url(best.get("link"))
+            body = description_text(best)
+            if url:
+                article = await fetch_article_body(self, url, is_google_news=False)
+                if article and len(article) > len(body or ""):
+                    body = article
+                item.url = url
+            if body:
+                item.body_snippet = body[:2000]
+                found += 1
+        return found
 
     async def _enrich_with_article_bodies(self, items: list[RawScrapedItem]) -> None:
         """The RSS description stays as the body unless the article page

@@ -308,3 +308,32 @@ def test_polish_canonical_labels_isin_and_dates():
     assert out["Analist raporu"] == "İş Yatırım 3Ç kar tahmini raporu yayımladı."
     assert out["Dava"] == "1,71 mlr TL ceza ödendi."
     assert out["İzin"] == "Bakanlık tesis için çevre izni verdi."  # not a borrowing permit
+
+
+async def test_bing_fills_headline_only_google_items():
+    from config.constants import SourceType
+    from config.settings import BingNewsConfig, PolitenessConfig, TickerConfig
+    from scrapers.bing_news_scraper import BingNewsScraper
+    from scrapers.models import NewsItem
+
+    rss = """<rss><channel><item><title>Gübre Fabrikaları hisse başına 3,81 TL brüt temettü ödeyecek</title>
+    <link>https://www.bing.com/news/apiclick.aspx?ref=x&amp;url=https%3a%2f%2fwww.ornek.com%2fgubrf-temettu</link>
+    <description>Gübre Fabrikaları 16 Ekim'de hisse başına 3,81 TL brüt nakit temettü ödeyecek.</description></item></channel></rss>"""
+
+    class Response:
+        text = rss
+        status_code = 200
+
+    scraper = BingNewsScraper(TickerConfig(symbol="GUBRF", name="Gübre Fabrikaları"), BingNewsConfig(), PolitenessConfig())
+
+    async def fake_get(url, **kwargs):
+        if "bing.com" in url:
+            return Response()
+        raise RuntimeError("no article fetch in tests")
+
+    scraper._get = fake_get
+    item = NewsItem(ticker="GUBRF", title="Gübre Fabrikaları hisse başına 3,81 TL brüt temettü ödeyecek",
+                    url="https://news.google.com/rss/articles/abc", source=SourceType.GOOGLE_NEWS)
+    await scraper.fill_headline_only([item])
+    assert str(item.url) == "https://www.ornek.com/gubrf-temettu"
+    assert "3,81 TL" in item.body_snippet

@@ -37,6 +37,7 @@ from config.constants import SourceType
 from config.settings import KapSourceConfig, TickerConfig
 from scrapers.base import BaseScraper
 from scrapers.models import RawScrapedItem
+from utils.memory import kap_lookback_days
 from utils.article_fetcher import structured_text
 
 logger = logging.getLogger(__name__)
@@ -127,7 +128,7 @@ class KapScraper(BaseScraper):
 
     async def _fetch_disclosures_json(self) -> list[dict]:
         today = date.today()
-        from_date = today - timedelta(days=LOOKBACK_DAYS)
+        from_date = today - timedelta(days=max(LOOKBACK_DAYS, kap_lookback_days()))
 
         url = f"{self.source_config.base_url}{self.source_config.disclosure_endpoint}"
         body = {

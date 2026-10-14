@@ -203,6 +203,7 @@ RAKAM DOĞRULUĞU (en önemli kural):
 - SADECE kaynakta geçen isim, kurum ve rakamları kullan; hiçbir şey uydurma, tahmin etme.
 - Rakamı kaynaktaki birimiyle aktar. Kısaltma yalnızca kesinse: 58.600.000 -> 58,6 mn; 1.500.000.000 -> 1,5 mlr. Birim belirsizse (milyon mu milyar mı) kaynaktaki yazımı aynen kullan; aynı tutarı iki farklı birimle ASLA yazma.
 - Bir tarihin ne olduğu (ihraç, vade, ödeme) kaynakta açık değilse o tarihi yazma.
+- Dönem kısaltmaları: "3Ç26" = 2026 3. çeyrek, "2Ç25" = 2025 2. çeyrek, "9A26" = 2026 ilk 9 ay. "01.01.2026-30.09.2026" dönemi = 2026 3. çeyrek (9 aylık); "2026-2027" gibi kaynakta olmayan yıl aralığı YAZMA.
 - Tarihleri kullanıcı mesajındaki "Bugünün tarihi" ile karşılaştır: geçmişteki bir olayı (yapılmış genel kurul, ödenmiş temettü) gelecek zamanla YAZMA; tescil/sonuç bildirimini "yapılacak" diye sunma.
 - Borçlanma bildirimlerinde ihraç TAVANI/limiti ile fiilen satılan (nominal) tutarı ayır; "ihraç etti" diye yalnızca satılan tutarı yaz, tavanı ancak ayrıca belirt. Yönetim kurulu/SPK onay tarihleri gibi süreç tarihlerini yazma. Tahvil ihracında yalnızca okuyucunun işine yarayanı yaz: satılan tutar, vade (tarih ya da gün), faiz/getiri ve kime satıldığı; ISIN, fiyat, iskonto oranı, kupon sayısı gibi teknik alanları YAZMA. Ör.: "173,75 mn TL'lik, 6 Aralık 2027 vadeli, %40 faizli tahvili nitelikli yatırımcılara sattı."
 - Formdaki tutarlar kodla Türkçe kısaltmaya çevrilmiş gelir ("30 mlr", "173,75 mn"); bunları AYNEN kullan, yeniden çevirme.

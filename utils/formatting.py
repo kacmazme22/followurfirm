@@ -135,7 +135,26 @@ def polish_sections(sections: list[SynthesizedSection]) -> list[SynthesizedSecti
     return result
 
 
-def polish_report(report: SynthesizedCompanyReport) -> SynthesizedCompanyReport:
+_YEAR_RANGE = re.compile(r"\b(20\d\d)\s*[-‑–]\s*(20\d\d)\b")
+
+
+def fix_year_ranges(text: str, source_text: str) -> str:
+    """"2026‑2027 üçüncü çeyrek" where only 2026 is in the sources -> "2026
+    üçüncü çeyrek"; a range both of whose years are sourced is kept."""
+    known = set(re.findall(r"\b20\d\d\b", source_text))
+
+    def replace(match: re.Match) -> str:
+        first, second = match.group(1), match.group(2)
+        if first in known and second not in known:
+            return first
+        if second in known and first not in known:
+            return second
+        return match.group(0)
+
+    return _YEAR_RANGE.sub(replace, text)
+
+
+def polish_report(report: SynthesizedCompanyReport, source_text: str | None = None) -> SynthesizedCompanyReport:
     """Same label across categories (e.g. "Dava" filed under two buckets)
     is merged into the first category it appears in."""
     seen: dict[str, SynthesizedSection] = {}
@@ -156,4 +175,10 @@ def polish_report(report: SynthesizedCompanyReport) -> SynthesizedCompanyReport:
     report.sections_by_category = new_sections
     if report.summary:
         report.summary = turkish_numbers(clean_prose(report.summary))
+    if source_text is not None:
+        for sections in new_sections.values():
+            for section in sections:
+                section.narrative = fix_year_ranges(section.narrative, source_text)
+        if report.summary:
+            report.summary = fix_year_ranges(report.summary, source_text)
     return report

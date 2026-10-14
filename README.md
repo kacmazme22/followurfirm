@@ -18,27 +18,49 @@ cp .env.example .env
 # alıcı listesini de aynı dosyadaki `recipients` bölümünden düzenleyin.
 
 python -m config.settings   # sanity check: config doğru okunuyor mu?
-python main.py              # scrape -> categorize -> dedup -> render, output/digest_{tarih}.html yazar (email gönderimi henüz yok)
+DRY_RUN=true python main.py # scrape -> categorize -> dedup -> özet -> output/digest_{tarih}.html, mail göndermez
 ```
 
 ## Sabah bülteninin zamanında gelmesi
 
-GitHub'ın zamanlanmış (cron) çalışmaları saatlerce gecikebiliyor, yoğunlukta
-hiç çalışmayabiliyor. Bu yüzden `daily_digest.yml` iki cron ile tetikleniyor
-(07:17 ve 09:13 TR) ve **günde bir kez** kuralı var: maili ilk gönderen
-çalışma bunu Actions cache'ine yazar, aynı gün sonraki tetiklemeler birkaç
-saniyede çıkar. Elle `force` seçeneğiyle yeniden gönderilebilir.
+Workflow yalnızca dışarıdan tetikleniyor. GitHub'ın kendi zamanlayıcısı
+(`schedule:`) 4-7 saat gecikmeyle çalıştığı için Ekim 2026'da kaldırıldı.
+Tetikleyiciler cron-job.org'da:
 
-Tam saatinde gelmesi için dışarıdan tetikleme (ücretsiz, ~5 dk kurulum):
+| Saat (TR) | Gövde | Ne yapar |
+|---|---|---|
+| 07:00 | `{"ref":"master","inputs":{"dry_run":"false","ai_provider":"groq","require_kap":"true"}}` | KAP'a ulaşamazsa mail göndermez, 07:30'a bırakır |
+| 07:30 | `{"ref":"master","inputs":{"dry_run":"false","ai_provider":"groq"}}` | 07:00 göndermediyse her durumda gönderir |
 
-1. GitHub → Settings → Developer settings → Fine-grained tokens → yeni token:
-   yalnızca `followurfirm` deposu, izin: **Actions: Read and write**.
-2. cron-job.org'da yeni iş: her gün 07:00 (Europe/Istanbul),
-   `POST https://api.github.com/repos/kacmazme22/followurfirm/actions/workflows/daily_digest.yml/dispatches`
-   - Header'lar: `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`
-   - Gövde: `{"ref":"master","inputs":{"dry_run":"false","ai_provider":"groq"}}`
-3. İstenirse 07:30 için ikinci bir iş: günde-bir-kez kuralı sayesinde ilk
-   çalışma mail attıysa ikincisi hiçbir şey göndermez.
+İstek: `POST https://api.github.com/repos/kacmazme22/followurfirm/actions/workflows/daily_digest.yml/dispatches`,
+header'lar `Authorization: Bearer <token>` (fine-grained, yalnızca bu depo,
+**Actions: Read and write**) ve `Accept: application/vnd.github+json`.
+
+**Günde bir kez** kuralı: maili ilk gönderen çalışma bunu Actions cache'ine
+yazar, aynı gün sonraki tetiklemeler birkaç saniyede çıkar. Elle `force`
+seçeneğiyle yeniden gönderilebilir.
+
+## Bülten hafızası
+
+`utils/memory.py`. Her gerçek gönderimden sonra, bültendeki maddelerin
+kaynak linkleri ve başlıkları `.digest-memory/memory.json` dosyasına yazılır
+ve Actions cache'inde saklanır (14 gün).
+
+- Ertesi gün aynı link ya da aynı haber başlığı (başka sitede olsa bile)
+  modele gönderilmez. KAP form başlıkları her seferinde aynı olduğu için
+  KAP bildirimleri yalnızca linkle eşleştirilir.
+- Haber penceresi sabit 36 saat değil, **son gönderimden bu yana + 6 saat**
+  (en az 36 saat, en fazla 7 gün). Mail gitmeyen bir günün haberleri
+  ertesi güne kalır.
+- Dry run hafızayı okur ama kaydetmez. Daha önce gönderilmiş haberleri de
+  görmek için `ignore_memory` seçeneği kullanılır.
+
+## Logdan inceleme
+
+Her çalışmanın Actions logunda `audit` satırları var: modele giden her
+haber (`girdi`) ve bültendeki her maddenin hangi haberlerden yazıldığı
+(`çıktı`). Elenen haberler de gerekçesiyle loglanır (alaka filtresi,
+hafıza). Bülteni log üzerinden kaynağına kadar takip etmek mümkündür.
 
 ## Maliyet ilkesi
 
@@ -51,28 +73,12 @@ Bu proje **sıfır ücretli servis** ilkesiyle inşa edilir:
 
 Detaylı mimari ve klasör yapısı için `PROJECT_TREE.md` dosyasına bakın.
 
-## Proje Durumu (son güncelleme: 2026-08-03)
+## Proje Durumu (son güncelleme: Ekim 2026)
 
-### Tamamlanan (test edilmiş, gerçek ağ istekleriyle doğrulanmış)
-
-- **`scrapers/base.py`** — `BaseScraper` ABC: politeness (rate-limit + User-Agent), in-run cache, `run()` hiç exception fırlatmıyor (`ScraperResult{items, error}` dönüyor). `_get`/`_post` artık `follow_redirects=True` kullanıyor (bkz. "Bilinen gotcha'lar").
-- **`scrapers/kap_scraper.py`** — KAP'ın undocumented JSON API'si (`/tr/api/disclosure/members/byCriteria`, POST). İki kullanım şekli: `fetch_raw()` (tek ticker, `run()` üzerinden) ve `fetch_all_raw(tickers)` (tüm şirketleri **tek POST**'ta çekip client-side `stockCodes`'a göre gruplar — `main.py` bunu kullanıyor, ticker başına ayrı istek atmıyor).
-- **`scrapers/bigpara_scraper.py`** — Bigpara hisse-haberleri sayfası, düz server-rendered HTML (JS-render yok), `BeautifulSoup` ile parse. URL: `{base_url}/borsa/hisse-fiyatlari/{ticker}-detay/hisse-haberleri/`.
-- **`scrapers/google_news_scraper.py`** — Google News RSS (`feedparser`), ticker+şirket adıyla query kuruyor.
-- **`nlp/categorizer.py`** — Kural-tabanlı (LLM yok) kategorizasyon, `KAP_KEYWORD_CATEGORY_MAP` + boilerplate filtresi.
-- **`nlp/dedup.py`** — Cross-source dedup (`SOURCE_PRIORITY`: Google News/Bigpara > KAP), elenen KAP linki `NewsItem.related_kap_url`'de korunuyor.
-- **`nlp/providers/`** — `SummarizerProvider` arayüzü + `NoopProvider` (gerçek no-op) + `factory.py`. **Groq implement edilmedi** (`AI_PROVIDER=groq` şu an `NotImplementedError` fırlatır — bilinçli olarak, ayrı bir görev).
-- **`templates/email_base.html` + `styles.py`** — Jinja2, inline-CSS (email client uyumluluğu için `<style>` bloğu yok), KapMail renk paleti.
-- **`main.py`** — Orchestrator: `run_pipeline()` (scrape → categorize → dedup → noop provider) + `render_digest_html()`. Bir ticker tamamen patlarsa diğerlerini etkilemez. **Email gönderimi yok** — sadece `output/digest_{tarih}.html` yazıyor.
-
-### Sırada (henüz yazılmadı)
-
-| Dosya | Not |
-|---|---|
-| `utils/email_sender.py` | SMTP gönderim (Gmail App Password, `.env`'de zaten alanları var) |
-| `.github/workflows/daily_digest.yml` | Cron workflow, `main.py`'yi günlük çalıştıracak |
-| `nlp/providers/groq_provider.py` | Bilinçli olarak ertelendi, ayrı görev |
-| `utils/cache.py`, `rate_limit.py` | `PROJECT_TREE.md`'de var ama henüz gerekmedi, `BaseScraper` politeness+cache'i şimdilik yeterli |
+Kaynaklar: KAP (JSON API + bildirim detay sayfası, formlar kodla
+"Etiket: Değer" satırlarına çevrilir), Bigpara, Bing News RSS (makale
+metni), Google News RSS (yalnızca başlık). Özetleme Groq (ücretsiz katman).
+Açık işler GitHub issue'larında takip ediliyor.
 
 ### Bilinen gotcha'lar / tuhaflıklar
 
@@ -81,7 +87,7 @@ Detaylı mimari ve klasör yapısı için `PROJECT_TREE.md` dosyasına bakın.
 - **`follow_redirects=True` fix'i (2026-08-03)**: Daha önce `BaseScraper._request()` redirect'leri takip etmiyordu, bu yüzden Bigpara sessizce 0 item + `error=None` dönüyordu (hata yok ama veri de yok — fark edilmesi zor bir "sessiz veri kaybı" idi). Artık merkezi olarak düzeltildi, tüm scraper'lara otomatik yayıldı.
 - **Windows terminalinde Türkçe karakterler bozuk görünebilir** (`T�RK` gibi) — bu sadece konsol code page sorunu, gerçek veri (dosyaya yazıldığında/UTF-8 okunduğunda) doğru. Birden fazla kez codepoint seviyesinde doğrulandı.
 - **`GoogleNewsRssConfig`'in kendi `politeness` alanı yok** (`config/settings.py`) — `main.py` şu an kütüphane varsayılanı `PolitenessConfig()`'i kullanıyor, şema değişikliği yapılmadı.
-- **Cron senkronizasyonu**: `config/config.yaml`'daki `schedule.cron_utc` alanı sadece bilgi amaçlıdır, hiçbir şeyi tetiklemez. Gerçek zamanlama `.github/workflows/daily_digest.yml`'deki `schedule.cron` alanından gelir. Bülten saatini değiştirmek isteyen biri her iki dosyayı da güncellemeli.
+- **Zamanlama**: `config/config.yaml`'daki `schedule` alanı sadece bilgi amaçlıdır, hiçbir şeyi tetiklemez. Bülten saati cron-job.org'daki işlerden gelir.
 
 ### Nasıl devam edilir
 

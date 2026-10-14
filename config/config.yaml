@@ -34,7 +34,7 @@ recipients:
   - "ediz.kacmaz19@gmail.com"
 
 schedule:
-  cron_utc: "17 4 * * *"   # 07:17 Europe/Istanbul (UTC+3); off-minute on purpose, see daily_digest.yml
+  cron_utc: "0 4 * * *"   # informational only: cron-job.org triggers 07:00 and 07:30 Europe/Istanbul (README)
   timezone_display: "Europe/Istanbul"
 
 sources:

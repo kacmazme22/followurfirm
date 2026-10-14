@@ -23,16 +23,18 @@ real article body (utils/article_fetcher.py) instead of staying title-only
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 import feedparser
 
-from config.constants import MAX_ARTICLES_TO_ENRICH_PER_TICKER, NEWS_LOOKBACK_HOURS, SourceType
+from config.constants import MAX_ARTICLES_TO_ENRICH_PER_TICKER, SourceType
 from config.settings import GoogleNewsRssConfig, PolitenessConfig, TickerConfig
 from scrapers.base import BaseScraper
 from nlp.relevance import filter_relevant
 from scrapers.models import RawScrapedItem
+from utils.memory import kap_lookback_days, news_lookback_hours
 from utils.article_fetcher import fetch_article_body
 
 logger = logging.getLogger(__name__)
@@ -61,6 +63,9 @@ class GoogleNewsScraper(BaseScraper):
         query = self.source_config.query_template_tr.format(
             company_name=self.ticker.name, ticker=self.ticker.symbol
         )
+        # Google's own "when:" filter must not be narrower than the window
+        # since the last mail (utils/memory.py).
+        query = re.sub(r"when:\d+d", f"when:{kap_lookback_days()}d", query)
         url = (
             f"{GOOGLE_NEWS_RSS_BASE}?q={quote(query)}"
             f"&hl={self.source_config.language}"
@@ -71,7 +76,7 @@ class GoogleNewsScraper(BaseScraper):
         response = await self._get(url)
         feed = feedparser.parse(response.text)
 
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=NEWS_LOOKBACK_HOURS)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=news_lookback_hours())
 
         items: list[RawScrapedItem] = []
         skipped = 0
