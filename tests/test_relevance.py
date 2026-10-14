@@ -190,3 +190,63 @@ def test_daily_close_is_not_an_index_change():
 
 def test_circuit_breaker_is_noise():
     assert is_market_noise("YEOTK BORSA İSTANBUL BISTECH DEVRE KESİCİ UYGULAMASI (Pay Bazında Devre Kesici Bildirimi)")
+
+
+# --- KAP forms as "Etiket: Değer" lines (2026-10-06 bond mix-up) -------------
+
+_KAP_FORM_HTML = """
+<html><body>
+<table>
+ <tr><td>Yapılan Açıklama Güncelleme mi?</td><td>Evet (Yes)</td></tr>
+ <tr><td>İlgili Şirketler</td><td>[]</td></tr>
+ <tr><td colspan="2">İlgili İhraç Tavanı Bilgileri</td></tr>
+ <tr><td>Para Birimi</td><td>USD</td></tr>
+ <tr><td>Tutar</td><td>4.000.000.000</td></tr>
+ <tr><td colspan="2">İhraç Edilecek Sermaye Piyasası Aracı Bilgileri</td></tr>
+ <tr><td>Satışı Gerçekleştirilen Nominal Tutar</td><td>50.000.000</td></tr>
+ <tr><td class="content-en">Nominal Amount Sold</td><td class="content-en">50.000.000</td></tr>
+ <tr><td>Döviz Cinsi</td><td>EUR</td></tr>
+ <tr><td>Vade Tarihi</td><td>05.04.2028</td></tr>
+</table>
+<p>Bankamızca yurt dışında ihraç edilen tahvilin satışı tamamlanmış olup, işlemin detayları yukarıdaki tabloda yer almaktadır ve kamuoyuna duyurulur.</p>
+</body></html>
+"""
+
+
+def test_kap_form_rows_become_label_value_lines():
+    from utils.article_fetcher import extract_form_lines
+
+    lines = extract_form_lines(_KAP_FORM_HTML)
+    assert "Satışı Gerçekleştirilen Nominal Tutar: 50.000.000" in lines
+    assert "Döviz Cinsi: EUR" in lines
+    # The ceiling's currency stays under its own section header.
+    assert lines.index("[İlgili İhraç Tavanı Bilgileri]") < lines.index("Para Birimi: USD") < lines.index(
+        "[İhraç Edilecek Sermaye Piyasası Aracı Bilgileri]") < lines.index("Döviz Cinsi: EUR")
+    assert not any("Güncelleme" in l or "İlgili Şirketler" in l or "Nominal Amount" in l for l in lines)
+
+
+@pytest.mark.parametrize("title", [
+    "KCHOL'de Global & BofA'dan Yüksek Hacimli Alımlar",
+    "BofA borsada alıma döndü: YKBNK ve KCHOL listenin başında",
+    "Emanet Koç Holding hisselerinde 1,4 milyarlık sır! 36 yıl sonra ortaya çıktı",
+    "Koç Holding hisselerinin peşinde 33 yıl! Servetin değeri...",
+])
+def test_broker_flow_and_wealth_trivia_dropped(title):
+    assert is_market_noise(title)
+
+
+def test_numbers_and_labels_are_cleaned_up():
+    from utils.formatting import polish_sections, turkish_numbers
+    from scrapers.models import SynthesizedSection
+
+    assert turkish_numbers("30,000,000,000 TRY tavan, 173,751,000 TRY satıldı") == "30 mlr TL tavan, 173,75 mn TL satıldı"
+    assert turkish_numbers("1.713.897.558 TL ceza, vade 05.04.2028") == "1,71 mlr TL ceza, vade 05.04.2028"
+    assert turkish_numbers("05 Oct 2026 tarihinde") == "5 Ekim 2026 tarihinde"
+
+    merged = polish_sections([
+        SynthesizedSection(subheading="Borçlanma", narrative="A", source_urls=["https://a.example/1"]),
+        SynthesizedSection(subheading="Dava", narrative="B"),
+        SynthesizedSection(subheading="borçlanma.", narrative="C", source_urls=["https://a.example/2"]),
+    ])
+    assert [s.subheading for s in merged] == ["Borçlanma", "Dava"]
+    assert merged[0].narrative == "A\n\nC" and len(merged[0].source_urls) == 2

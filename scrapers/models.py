@@ -208,6 +208,8 @@ class DigestRun(BaseModel):
     handed to the email renderer."""
 
     run_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # The day's most striking item, used to open the email subject.
+    headline: str | None = None
     # "Piyasa Gündemi" bullets shown above the company sections.
     market_brief: list[SynthesizedSection] = Field(default_factory=list)
     company_reports: list[SynthesizedCompanyReport] = Field(default_factory=list)

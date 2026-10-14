@@ -91,7 +91,7 @@ jobs:
         continue-on-error: true
         run: |
           echo "runner country: $(curl -s --max-time 10 https://ipinfo.io/country || echo '?')"
-          for url in https://www.kap.org.tr/tr https://bigpara.hurriyet.com.tr/; do
+          for url in https://www.kap.org.tr/tr https://kap.org.tr/tr https://bigpara.hurriyet.com.tr/ "https://www.bing.com/news/search?q=Akbank&format=rss"; do
             curl -s -o /dev/null --max-time 20 -w "$url -> HTTP %{http_code}, connect %{time_connect}s\n" "$url" || echo "$url -> unreachable"
           done
 

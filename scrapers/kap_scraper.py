@@ -37,10 +37,24 @@ from config.constants import SourceType
 from config.settings import KapSourceConfig, TickerConfig
 from scrapers.base import BaseScraper
 from scrapers.models import RawScrapedItem
+from utils.article_fetcher import structured_text
 
 logger = logging.getLogger(__name__)
 
 DISCLOSURE_REFERER = "https://www.kap.org.tr/tr/bildirim-sorgu"
+DETAIL_HOSTS = ("https://www.kap.org.tr", "https://kap.org.tr")
+MAX_DETAIL_CHARS = 1900  # NewsItem.body_snippet caps at 2000
+
+# Same browser-like headers the user's KapMail project uses against KAP.
+BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+    "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8",
+}
+
 DISCLOSURE_DETAIL_URL_TEMPLATE = "https://www.kap.org.tr/tr/Bildirim/{disclosure_index}"
 
 # Disclosures can land just after midnight, so the query window is wider than
@@ -76,12 +90,40 @@ class KapScraper(BaseScraper):
         fetch_raw() is unprotected until run() wraps it."""
         async with self._client_session():
             disclosures = await self._fetch_disclosures_json()
-        grouped = {ticker.symbol: self._items_for_ticker(disclosures, ticker.symbol) for ticker in tickers}
-        logger.info(
-            "KAP: toplam %d bildirim, takip edilenler: %s",
-            len(disclosures), {symbol: len(items) for symbol, items in grouped.items()},
-        )
+            grouped = {ticker.symbol: self._items_for_ticker(disclosures, ticker.symbol) for ticker in tickers}
+            logger.info(
+                "KAP: toplam %d bildirim, takip edilenler: %s",
+                len(disclosures), {symbol: len(items) for symbol, items in grouped.items()},
+            )
+            await self._enrich_with_details([item for items in grouped.values() for item in items])
         return grouped
+
+    async def _enrich_with_details(self, items: list[RawScrapedItem]) -> None:
+        """The byCriteria API only gives a one-line summary ("Yurtdışı
+        Piyasalara Tahvil İhracı"). The disclosure page itself is
+        server-rendered HTML (that's how the user's KapMail project reads
+        buyback tables from it), so the tracked companies' filings get their
+        full form as "Etiket: Değer" lines, see utils/article_fetcher.py.
+        Both host spellings are tried: KapMail uses kap.org.tr without www."""
+        fetched = 0
+        for item in items:
+            index = item.extra.get("disclosure_index")
+            if index is None:
+                continue
+            for host in DETAIL_HOSTS:
+                url = f"{host}/tr/Bildirim/{index}"
+                try:
+                    response = await self._get(url, headers=dict(BROWSER_HEADERS))
+                    response.raise_for_status()
+                except Exception as exc:
+                    logger.info("KAP detay alınamadı (%s): %s: %s", url, type(exc).__name__, exc)
+                    continue
+                text = structured_text(response.text, url)
+                if text and len(text) > len(item.raw_body_snippet or ""):
+                    item.raw_body_snippet = text[:MAX_DETAIL_CHARS]
+                    fetched += 1
+                break
+        logger.info("KAP: %d/%d bildirimin detay sayfası okundu", fetched, len(items))
 
     async def _fetch_disclosures_json(self) -> list[dict]:
         today = date.today()

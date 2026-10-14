@@ -18,9 +18,13 @@ from config.settings import AppConfig
 logger = logging.getLogger(__name__)
 
 
-def build_digest_subject(settings: AppConfig, today: date | None = None) -> str:
-    """Fills settings.yaml.email.subject_template's {date} placeholder."""
+def build_digest_subject(settings: AppConfig, today: date | None = None, headline: str | None = None) -> str:
+    """With a headline (the day's most striking item, see
+    GroqProvider.pick_headline): "<headline> · FollowUrFirm Bülteni ·
+    14.10.2026". Without one, settings.yaml.email.subject_template."""
     today = today or date.today()
+    if headline:
+        return f"{headline} · FollowUrFirm Bülteni · {today.strftime('%d.%m.%Y')}"
     return settings.yaml.email.subject_template.format(date=today.strftime("%d.%m.%Y"))
 
 

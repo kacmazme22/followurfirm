@@ -36,6 +36,7 @@ class SourceType(str, Enum):
     KAP = "kap"
     BIGPARA = "bigpara"
     GOOGLE_NEWS = "google_news"
+    BING_NEWS = "bing_news"
     COMPANY_IR = "company_ir"
     WEB_SEARCH_FALLBACK = "web_search_fallback"
     # Phase 2
@@ -205,6 +206,9 @@ MAX_ARTICLES_TO_ENRICH_PER_TICKER = 8
 # ---------------------------------------------------------------------------
 SOURCE_PRIORITY: dict[SourceType, int] = {
     SourceType.GOOGLE_NEWS: 2,
+    # Same rank as Google; main.py puts Bing items first so a tie (the same
+    # story from both) keeps the Bing copy, which carries article text.
+    SourceType.BING_NEWS: 2,
     SourceType.BIGPARA: 2,
     SourceType.KAP: 1,
     SourceType.COMPANY_IR: 0,

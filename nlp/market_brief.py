@@ -28,9 +28,12 @@ from config.constants import SourceType
 from config.settings import AppConfig
 from nlp.providers.base import SummarizerProvider
 from nlp.relevance import is_market_noise, is_multi_ticker_list, tr_lower
+from scrapers.bing_news_scraper import description_text, real_article_url
+from scrapers.bing_news_scraper import feed_url as bing_feed_url
 from scrapers.google_news_scraper import GOOGLE_NEWS_RSS_BASE, GoogleNewsScraper
 from scrapers.models import NewsItem, SynthesizedSection
 from utils.audit import log_inputs, log_outputs
+from utils.formatting import polish_sections
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +44,8 @@ DUPLICATE_TITLE_SCORE = 85
 QUERY_SPACING_SECONDS = 2.0
 # The first query (TCMB) alone filled the whole 30-headline budget on
 # 2026-10-06; every query now gets a fair share.
-MAX_HEADLINES_PER_QUERY = 5
+MAX_HEADLINES_PER_QUERY = 4  # per source (Bing, Google) per query
+MAX_SUMMARY_CHARS = 300
 
 _TR_MONTHS = ["ocak", "şubat", "mart", "nisan", "mayıs", "haziran", "temmuz",
               "ağustos", "eylül", "ekim", "kasım", "aralık"]
@@ -83,39 +87,66 @@ async def _get_feed(client: httpx.AsyncClient, url: str, query: str) -> httpx.Re
 
 
 async def fetch_market_headlines(settings: AppConfig) -> list[NewsItem]:
+    """Each query goes to Bing (headline + short description, see
+    scrapers/bing_news_scraper.py) and Google (headline only). On
+    2026-10-14 the box said "TCMB ekim ayı faiz kararı beklentileri
+    netleşti" because only the headline existed; the description usually
+    carries the actual figure."""
     config = settings.yaml.sources.market_brief
     rss = settings.yaml.sources.google_news_rss
+    bing = settings.yaml.sources.bing_news
     cutoff = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
     headlines: list[NewsItem] = []
 
+    def add(title: str, link: str | None, body: str | None, source: SourceType) -> bool:
+        if not title or is_market_noise(title) or is_multi_ticker_list(title) or _is_not_news(title):
+            return False
+        for i, existing in enumerate(headlines):
+            if fuzz.token_set_ratio(title, existing.title) >= DUPLICATE_TITLE_SCORE:
+                if body and not existing.body_snippet:  # keep the copy that has text
+                    headlines[i] = existing.model_copy(update={"body_snippet": body[:MAX_SUMMARY_CHARS], "url": link or existing.url})
+                return False
+        headlines.append(NewsItem(ticker="PIYASA", title=title, url=link, source=source,
+                                  body_snippet=body[:MAX_SUMMARY_CHARS] if body else None))
+        return True
+
+    def fresh(entry) -> bool:
+        published = entry.get("published_parsed")
+        return published is None or datetime(*published[:6], tzinfo=timezone.utc) >= cutoff
+
     async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=15.0), follow_redirects=True) as client:
         for query in config.queries:
-            url = (
+            feeds = []
+            if bing.enabled:
+                feeds.append((SourceType.BING_NEWS, bing_feed_url(query.replace(" when:1d", ""), bing)))
+            feeds.append((SourceType.GOOGLE_NEWS, (
                 f"{GOOGLE_NEWS_RSS_BASE}?q={quote(query)}"
                 f"&hl={rss.language}&gl={rss.country}&ceid={rss.country}:{rss.language}"
-            )
-            response = await _get_feed(client, url, query)
-            if response is None:
-                continue
+            )))
+            for source, url in feeds:
+                response = await _get_feed(client, url, query)
+                if response is None:
+                    continue
+                taken = 0
+                for entry in feedparser.parse(response.text).entries:
+                    if not fresh(entry):
+                        continue
+                    if source == SourceType.BING_NEWS:
+                        added = add((entry.get("title") or "").strip(), real_article_url(entry.get("link")),
+                                    description_text(entry), source)
+                    else:
+                        title, _ = GoogleNewsScraper._split_title_and_source(entry.get("title", ""))
+                        added = add(title, entry.get("link"), None, source)
+                    taken += added
+                    if taken >= MAX_HEADLINES_PER_QUERY:
+                        break
 
-            taken = 0
-            for entry in feedparser.parse(response.text).entries:
-                published = entry.get("published_parsed")
-                if published is not None and datetime(*published[:6], tzinfo=timezone.utc) < cutoff:
-                    continue
-                title, _ = GoogleNewsScraper._split_title_and_source(entry.get("title", ""))
-                if not title or is_market_noise(title) or is_multi_ticker_list(title) or _is_not_news(title):
-                    continue
-                if any(fuzz.token_set_ratio(title, h.title) >= DUPLICATE_TITLE_SCORE for h in headlines):
-                    continue
-                headlines.append(
-                    NewsItem(ticker="PIYASA", title=title, url=entry.get("link"), source=SourceType.GOOGLE_NEWS)
-                )
-                taken += 1
-                if taken >= MAX_HEADLINES_PER_QUERY:
-                    break
-
-    logger.info("Piyasa gündemi: %d başlık toplandı", len(headlines))
+    logger.info(
+        "Piyasa gündemi: %d başlık toplandı (%d tanesi özetli)",
+        len(headlines), sum(1 for h in headlines if h.body_snippet),
+    )
+    # Items with a summary first: they're the ones the LLM can state facts from.
+    headlines.sort(key=lambda h: h.body_snippet is None)
     return headlines[: config.max_headlines]
 
 
@@ -148,6 +179,7 @@ async def build_market_brief(settings: AppConfig, provider: SummarizerProvider) 
         for section in sections:
             section.source_urls = section.source_urls[:MAX_LINKS_PER_ITEM]
         _fix_index_change_labels(sections, headlines)
+        sections = polish_sections(sections)
         log_outputs("PIYASA", sections, headlines)
         return sections
     except Exception as exc:  # the box is optional; never sink the digest

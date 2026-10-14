@@ -178,6 +178,9 @@ YAZIM:
 - narrative: uzunluğu haberdeki bilgiye göre belirle; kısa yazmak için bilgi atma, uzatmak için dolgu ekleme. Basit bir olay (tek atama, tek patent) 1-2 cümle; çok parçalı bir olay (finansal sonuç, büyük sözleşme, birleşme, analist raporu, geri alım programı) yatırımcının ihtiyaç duyduğu tüm rakamlarla 3-5 cümle. Önce olay ve büyüklüğü (tutar, adet, oran, fiyat aralığı, karşı taraf, tarih), sonra kritik detaylar (vade, finansman, devreye alma, kârın kullanımı, öncekiyle karşılaştırma). Örnek: "Azerenerji (Azerbaycan) ile 250 MWh batarya depolama tesisi için 58,6 mn $'lık EPC-F sözleşmesi imzalandı. Finansman 4 yıl geri ödemeli, tesis 1 yıl içinde devreye girecek."
 - Okuyucu linke tıklamadan anlamalı: haberin özündeki rakamı (hedef fiyat ve önceki değeri, tavsiye, tutar, oran) mutlaka yaz. "Yeni hedef fiyatını duyurdu" gibi rakamsız bir cümle YASAK.
 - Ham metni kopyalama; bildirim dilini ("Şirketimiz", "kamuoyuna duyurulur") ve içi boş yorumları ("dikkat çekecek", "önem taşımaktadır", "olumlu etki") yazma.
+- AYNI OLAY = TEK MADDE: bir olayın KAP bildirimi ve onu aktaran haberler (ör. Rekabet Kurulu cezasının KAP açıklaması + "Akbank'a 1,7 milyar TL ceza" haberleri; bilanço tarihinin KAP finansal takvimi + "bilançoyu 27 Ekim'de açıklayacak" haberleri) tek maddedir. Farklı kaynaklarda farklı yazılmış aynı tutar (1.713.897.558 TL = 1,7 milyar TL) AYNI rakamdır: ASLA toplama, iki ayrı olay sanma.
+- Aynı TÜRDEKİ farklı olaylara (ör. iki ayrı borçlanma) AYNI etiketi ver; bunlar tek başlık altında ayrı paragraflar olarak gösterilecek.
+- Rakamları Türkçe yaz: "30 mlr TL", "173,8 mn TL", ondalık için virgül; "30,000,000,000", "TRY", "Oct" gibi İngilizce biçimler YASAK.
 - Aynı rapor/olay için birden fazla haber varsa (ör. aynı aracı kurum raporunun hedef fiyat ve sektör görünümü haberleri) TEK maddede birleştir.
 - source_ids: maddeyi destekleyen haberlerin numaraları (ör. [1, 3]). Metne URL yazma.
 
@@ -194,12 +197,13 @@ RAKAM DOĞRULUĞU (en önemli kural):
 Çıktıyı SADECE JSON olarak ver ("category" ve "kisaca" alanlarını yalnızca kullanıcı mesajı isterse ekle):
 {"kisaca": "...", "sections": [{"category": "...", "subheading": "...", "narrative": "...", "source_ids": [1]}]}"""
 
-MARKET_SYSTEM_PROMPT = """Sen Borsa İstanbul odaklı bir sabah bülteninin editörüsün. Sana son 24 saatin piyasa haberlerinin BAŞLIKLARI ve linkleri verilecek. Bültenin en üstündeki "Piyasa Gündemi" kutusunu yaz: piyasayı etkileyebilecek en önemli 3-5 gelişme.
+MARKET_SYSTEM_PROMPT = """Sen Borsa İstanbul odaklı bir sabah bülteninin editörüsün. Sana son 24 saatin piyasa haberlerinin başlıkları ve (varsa) kısa özetleri verilecek. Bültenin en üstündeki "Piyasa Gündemi" kutusunu yaz: piyasayı etkileyebilecek en önemli 3-5 gelişme.
 
 ÖNCELİK SIRASI: TCMB/Fed faiz kararları ve açıklamaları, enflasyon ve diğer makro veriler (TÜİK, büyüme, cari denge, işsizlik), BIST endeks değişiklikleri ve Borsa İstanbul kararları, vergi/regülasyon/SPK kararları, kur ve küresel piyasalarda büyük hareketler, bugün açıklanacak önemli veriler.
 
 KURALLAR:
-- SADECE başlıklarda geçen bilgi ve rakamları kullan; rakam UYDURMA. Başlıkta rakam yoksa rakamsız yaz.
+- SADECE başlık ve özetlerde geçen bilgi ve rakamları kullan; rakam UYDURMA.
+- Her madde okuyucuya OLGUYU vermeli: beklentinin kendisi (kaç baz puan, hangi kurum), tahminin rakamları (büyüme %, enflasyon %), kararın içeriği. "Beklentiler netleşti", "tahminlerini açıkladı", "rakamlar belli oldu" gibi içeriği vermeyen cümle YASAK; başlık ve özet olguyu vermiyorsa o maddeyi yazma.
 - Teknik analiz, destek/direnç, tek bir hissenin günlük fiyat hareketi, "günün en çok yükselenleri", sıradan günlük endeks/altın/döviz fiyat hareketleri gibi maddeleri ALMA (yalnızca rekor veya olağanüstü bir hareketse, rakamıyla yaz).
 - Rakamı başlıkta nasıl geçiyorsa öyle yaz; "12.4xx" gibi yer tutucu veya yuvarlatılmış rakam YASAK. Rakam yoksa rakamsız yaz.
 - Başlık geçmiş bir dönemi anlatıyorsa (bugünün tarihinden önceki bir ayın kararı vb.) onu bugünün haberi gibi YAZMA.
@@ -218,6 +222,11 @@ KURALLAR:
 
 Çıktıyı SADECE şu JSON formatında ver:
 {"sections": [{"subheading": "...", "narrative": "...", "source_ids": [1]}]}"""
+
+
+HEADLINE_MAX_TOKENS = 600
+HEADLINE_MAX_CHARS = 90
+HEADLINE_SYSTEM_PROMPT = """Bir yatırımcı bülteninin e-posta konusunu yazıyorsun. Sana bugünkü bültenin maddeleri verilecek. Okuyucu için en çarpıcı ve önemli TEK gelişmeyi seç (şirket haberleri genelde piyasa gündeminden önce gelir; büyük tutar, ceza, sözleşme, temettü, bilanço gibi olaylar öne çıkar) ve en fazla 70 karakterlik Türkçe bir başlık yaz. Rakam varsa koru, şirket adını/kodunu yaz. Maddelerde olmayan hiçbir bilgiyi ekleme. Sadece JSON ver: {"baslik": "..."}"""
 
 
 class _Parsed(NamedTuple):
@@ -253,9 +262,34 @@ class GroqProvider(SummarizerProvider):
             sections_by_category=sections_by_category,
         )
 
+    async def pick_headline(self, candidates: list[str]) -> str | None:
+        """The user wanted the subject to open with the day's most striking
+        news instead of a fixed "FollowUrFirm Günlük Bülten — date". Any
+        failure just means the plain subject."""
+        if not candidates:
+            return None
+        prompt = "\n".join([_today_line(), "Bugünkü bültenin maddeleri:", *[f"- {c}" for c in candidates]])
+        try:
+            completion = await self._client.chat.completions.create(
+                model=self._model,
+                max_tokens=HEADLINE_MAX_TOKENS,
+                response_format={"type": "json_object"},
+                messages=[{"role": "system", "content": HEADLINE_SYSTEM_PROMPT}, {"role": "user", "content": prompt}],
+            )
+            headline = json.loads(completion.choices[0].message.content).get("baslik")
+        except Exception as exc:
+            logger.warning("Konu başlığı üretilemedi: %s: %s", type(exc).__name__, exc)
+            return None
+        if not isinstance(headline, str) or not headline.strip():
+            return None
+        return headline.strip().rstrip(".")[:HEADLINE_MAX_CHARS]
+
     async def summarize_market(self, headlines: list[NewsItem]) -> list[SynthesizedSection]:
-        lines = [_today_line(), "Son 24 saatin piyasa başlıkları:", ""]
-        lines += [f"{i}. {item.title}" for i, item in enumerate(headlines, start=1)]
+        lines = [_today_line(), "Son 24 saatin piyasa haberleri (başlık ve varsa kısa özet):", ""]
+        for i, item in enumerate(headlines, start=1):
+            lines.append(f"{i}. {item.title}")
+            if item.body_snippet:
+                lines.append(f"   Özet: {item.body_snippet}")
         parsed = await self._call_with_retry(
             "PIYASA", "piyasa_gundemi", "\n".join(lines), headlines,
             system_prompt=MARKET_SYSTEM_PROMPT, max_tokens=MARKET_MAX_TOKENS,
@@ -408,7 +442,7 @@ class GroqProvider(SummarizerProvider):
             f"Her section'a bir \"category\" alanı ekle; değeri şunlardan biri olmalı: {codes}.",
             "Ön-kategori bir ipucudur; haberin içeriğine göre daha uygun kategoriyi seçebilirsin.",
             "Aynı olay/rapor birden fazla haberde veya ön-kategoride geçse bile TEK section yaz ve tek kategoriye koy.",
-            "Ayrıca üst seviyede bir \"kisaca\" alanı yaz: günün en önemli gelişmesini anlatan TEK cümle (en fazla ~25 kelime). Hiç section yoksa \"kisaca\" boş string olsun.",
+            "Ayrıca üst seviyede bir \"kisaca\" alanı yaz: şirketin bugünkü TÜM önemli gelişmelerini birlikte özetleyen 1-2 cümle (en fazla ~40 kelime), en önemlisi önce. Tek bir habere indirgeme; ör. \"Rekabet Kurulu'nun 1,7 mlr TL cezası uzlaşmayla kapandı; banka 30 mlr TL'lik yurt içi tahvil ihracı yaptı ve 3. çeyrek bilançosunu 27 Ekim'de açıklayacak.\" Hiç section yoksa \"kisaca\" boş string olsun.",
             "",
             "Ham haberler:",
         ]

@@ -75,6 +75,15 @@ _MARKET_NOISE_PATTERNS = [
         r"yüklü (alım|satış)",
         r"kurum(dan|lardan) (gelen )?(alım|satış)",
         r"(model|döngüsel) portföy",
+        # Broker-flow and wealth-trivia stories (2026-10-14: "KCHOL'de Global &
+        # BofA'dan Yüksek Hacimli Alımlar", "Emanet Koç Holding hisselerinde
+        # 1,4 milyarlık sır!", "Koç Holding hisselerinin peşinde 33 yıl!").
+        r"hacimli (alım|satış)",
+        r"(alıma|satışa) döndü",
+        r"listenin başında",
+        r"servet",
+        r"\bsırr?ı?\b",
+        r"peşinde \d+ yıl",
         r"portföy ağırlı",
         # Quote/forum pages Google News indexes as "news": "YEO TEKNOLOJI
         # ENERJI (YEOTK) Hisse Senedi", "YEOTK Hisse Yorumları".
@@ -181,6 +190,9 @@ def filter_relevant(items: list[RawScrapedItem], ticker: TickerConfig) -> list[R
             dropped_noise += 1
         elif not _mentions_company(item.raw_title, keywords):
             dropped_unrelated += 1
+            # Logged so a too-strict filter is visible in the Actions log
+            # (KCHOL lost 21 of 26 Google items on 2026-10-13).
+            logger.info("%s: şirketi anmıyor, elendi: %s", ticker.symbol, item.raw_title[:100])
         else:
             kept.append(item)
 

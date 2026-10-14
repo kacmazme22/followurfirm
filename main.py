@@ -25,11 +25,13 @@ from nlp.market_brief import build_market_brief
 from nlp.providers.factory import get_provider
 from nlp.providers.noop_provider import NoopProvider
 from scrapers.bigpara_scraper import BigparaScraper
+from scrapers.bing_news_scraper import BingNewsScraper
 from scrapers.google_news_scraper import GoogleNewsScraper
 from scrapers.kap_scraper import KapScraper
 from scrapers.models import CompanyReport, DigestRun, RawScrapedItem, SynthesizedCompanyReport
 from templates.styles import template_colors
 from utils.audit import log_inputs, log_outputs
+from utils.formatting import polish_report, turkish_numbers
 from utils.email_sender import build_digest_subject, send_digest_email
 
 logger = logging.getLogger(__name__)
@@ -67,7 +69,7 @@ async def fetch_kap_once_and_group(
     last_exc: Exception | None = None
     for attempt in range(1, KAP_ATTEMPTS + 1):
         try:
-            async with httpx.AsyncClient(timeout=KAP_TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=KAP_TIMEOUT, follow_redirects=True) as client:
                 scraper = KapScraper(_KAP_BULK_PLACEHOLDER_TICKER, settings.yaml.sources.kap, http_client=client)
                 return await scraper.fetch_all_raw(tickers)
         except Exception as exc:
@@ -99,6 +101,14 @@ async def _build_company_report(
     if bigpara_result.error:
         digest_run.add_error(SourceType.BIGPARA, ticker.symbol, bigpara_result.error)
 
+    # Before Google: on a duplicate story the first-seen copy is kept, and
+    # Bing's copy carries article text where Google's is a bare headline.
+    if settings.yaml.sources.bing_news.enabled:
+        bing_result = await BingNewsScraper(ticker, settings.yaml.sources.bing_news, _GOOGLE_NEWS_POLITENESS).run()
+        raw_items += bing_result.items
+        if bing_result.error:
+            digest_run.add_error(SourceType.BING_NEWS, ticker.symbol, bing_result.error)
+
     google_result = await GoogleNewsScraper(
         ticker, settings.yaml.sources.google_news_rss, _GOOGLE_NEWS_POLITENESS
     ).run()
@@ -122,7 +132,7 @@ async def _build_company_report(
     sent_items = [item for _, items in report.ordered_categories() for item in items]
     log_inputs(ticker.symbol, sent_items)
     try:
-        synthesized = await provider.summarize_company_report(report)
+        synthesized = polish_report(await provider.summarize_company_report(report))
         log_outputs(ticker.symbol, [s for _, secs in synthesized.ordered_sections() for s in secs], sent_items)
         return synthesized
     except RuntimeError as exc:
@@ -165,7 +175,20 @@ async def run_pipeline() -> DigestRun:
             logger.error("Ticker %s failed entirely: %s", ticker.symbol, exc, exc_info=True)
             digest_run.add_error("pipeline", ticker.symbol, str(exc))
 
+    digest_run.headline = await get_provider(settings).pick_headline(_headline_candidates(digest_run))
+    if digest_run.headline:
+        digest_run.headline = turkish_numbers(digest_run.headline)
+    logger.info("Konu başlığı: %s", digest_run.headline)
     return digest_run
+
+
+def _headline_candidates(digest_run: DigestRun) -> list[str]:
+    candidates = []
+    for report in digest_run.company_reports:
+        for _, sections in report.ordered_sections():
+            candidates += [f"{report.ticker} — {s.subheading}: {s.narrative.split(chr(10))[0][:220]}" for s in sections]
+    candidates += [f"Piyasa — {s.subheading}: {s.narrative[:200]}" for s in digest_run.market_brief]
+    return candidates
 
 
 def render_digest_text(digest_run: DigestRun) -> str:
@@ -177,7 +200,7 @@ def render_digest_text(digest_run: DigestRun) -> str:
 
     def add_section(section) -> None:
         if section.narrative != section.subheading:
-            lines.append(f"* {section.subheading}: {section.narrative}")
+            lines.append(f"* {section.subheading}: {section.narrative}".replace("\n\n", "\n  "))
         else:
             lines.append(f"* {section.subheading}")
         lines.extend(f"  -> {url}" for url in section.source_urls)
@@ -234,5 +257,5 @@ if __name__ == "__main__":
     output_path.with_suffix(".txt").write_text(rendered_text, encoding="utf-8")
     print(f"Digest written to {output_path}")
 
-    subject = build_digest_subject(settings)
+    subject = build_digest_subject(settings, headline=result.headline)
     send_digest_email(rendered_html, subject, settings.yaml.recipients, settings, text_content=rendered_text)
