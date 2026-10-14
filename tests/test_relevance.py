@@ -426,11 +426,12 @@ def test_fine_paragraph_moved_out_of_borrowing():
     ]
 
 
-def test_kap_company_path_from_list():
-    from scrapers.ir_scraper import kap_company_path
+def test_kap_company_paths_nearest_first():
+    from scrapers.ir_scraper import kap_company_paths
 
-    html = """<a href="/tr/sirket-bilgileri/ozet/2413-akbank-t-a-s">AKBANK T.A.Ş.</a><span>AKBNK</span>
-    """ + "x" * 900 + """<a href="/tr/sirket-bilgileri/ozet/1234-koc-holding-a-s">KOÇ HOLDİNG A.Ş.</a><span>KCHOL</span>"""
-    assert kap_company_path(html, "KCHOL") == "/tr/sirket-bilgileri/ozet/1234-koc-holding-a-s"
-    assert kap_company_path(html, "AKBNK") == "/tr/sirket-bilgileri/ozet/2413-akbank-t-a-s"
-    assert kap_company_path(html, "YEOTK") is None
+    html = ("""<a href="/tr/sirket-bilgileri/ozet/118-guney-bagimsiz-denetim">GÜNEY</a>""" + "x" * 200
+            + """<a href="/tr/sirket-bilgileri/ozet/1234-koc-holding-a-s">KOÇ HOLDİNG</a><span>KCHOL</span>"""
+            + "x" * 300 + """<a href="/tr/sirket-bilgileri/ozet/2413-akbank-t-a-s">AKBANK</a><span>AKBNK</span>""")
+    assert kap_company_paths(html, "KCHOL")[0] == "/tr/sirket-bilgileri/ozet/1234-koc-holding-a-s"
+    assert kap_company_paths(html, "AKBNK")[0] == "/tr/sirket-bilgileri/ozet/2413-akbank-t-a-s"
+    assert kap_company_paths(html, "YEOTK") == []

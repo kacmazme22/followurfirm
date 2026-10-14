@@ -179,15 +179,21 @@ def ir_link_on_site(html: str, page_url: str, ticker: TickerConfig) -> str | Non
 _KAP_COMPANY_PATH = re.compile(r"/tr/sirket-bilgileri/(?:ozet|genel)/[\w-]+")
 
 
-def kap_company_path(html: str, symbol: str) -> str | None:
-    """The company page link next to `symbol` in KAP's company list (the
-    page is a Next.js app: links and codes may sit in HTML or in its JSON)."""
+def kap_company_paths(html: str, symbol: str, limit: int = 3) -> list[str]:
+    """Company page links in KAP's company list, nearest to `symbol` first.
+    The list also links auditors next to each company (2026-10-14: a
+    ±400-character window picked "Güney Bağımsız Denetim" for KCHOL), so
+    callers confirm each candidate page carries the symbol."""
     symbol_re = re.compile(rf"(?<![A-Z0-9]){re.escape(symbol)}(?![A-Z0-9])")
+    positions = [m.start() for m in symbol_re.finditer(html)]
+    if not positions:
+        return []
+    distances: dict[str, int] = {}
     for match in _KAP_COMPANY_PATH.finditer(html):
-        window = html[max(0, match.start() - 400): match.end() + 400]
-        if symbol_re.search(window):
-            return match.group(0)
-    return None
+        distance = min(abs(match.start() - p) for p in positions)
+        path = match.group(0)
+        distances[path] = min(distance, distances.get(path, distance))
+    return sorted(distances, key=distances.get)[:limit]
 
 
 class IrPageScraper(BaseScraper):
@@ -253,20 +259,25 @@ class IrPageScraper(BaseScraper):
     async def _website_from_kap(self) -> str | None:
         """The company's own site, as listed on its KAP company page (linked
         from its filings, or found in KAP's list of BIST companies)."""
-        if not self.kap_company_url:
-            self.kap_company_url = await self._kap_company_url_from_list()
-        if not self.kap_company_url:
-            logger.info("%s: KAP şirket sayfası bulunamadı", self.ticker.symbol)
-            return None
-        try:
-            response = await self._get(self.kap_company_url, headers=dict(KAP_HEADERS))
-            response.raise_for_status()
-        except Exception as exc:
-            logger.info("%s: KAP şirket sayfası okunamadı: %s", self.ticker.symbol, exc)
-            return None
-        return company_website(response.text, self.ticker)
+        candidates = [self.kap_company_url] if self.kap_company_url else await self._kap_company_urls_from_list()
+        for url in candidates:
+            try:
+                response = await self._get(url, headers=dict(KAP_HEADERS))
+                response.raise_for_status()
+            except Exception as exc:
+                logger.info("%s: KAP şirket sayfası okunamadı (%s): %s", self.ticker.symbol, url, exc)
+                continue
+            if self.ticker.symbol not in response.text:
+                continue  # another company's page (an auditor listed next to it)
+            website = company_website(response.text, self.ticker)
+            logger.info("%s: KAP şirket sayfası adayı %s, web sitesi: %s", self.ticker.symbol, url, website)
+            if website:
+                self.kap_company_url = url
+                return website
+        logger.info("%s: KAP şirket sayfası bulunamadı (%d aday)", self.ticker.symbol, len(candidates))
+        return None
 
-    async def _kap_company_url_from_list(self) -> str | None:
+    async def _kap_company_urls_from_list(self) -> list[str]:
         for host in KAP_HOSTS:
             try:
                 response = await self._get(f"{host}{KAP_COMPANY_LIST}", headers=dict(KAP_HEADERS))
@@ -274,9 +285,8 @@ class IrPageScraper(BaseScraper):
             except Exception as exc:
                 logger.info("KAP şirket listesi okunamadı (%s): %s", host, exc)
                 continue
-            path = kap_company_path(response.text, self.ticker.symbol)
-            return f"{host}{path}" if path else None
-        return None
+            return [f"{host}{path}" for path in kap_company_paths(response.text, self.ticker.symbol)]
+        return []
 
     async def _html(self, url: str) -> str | None:
         try:
