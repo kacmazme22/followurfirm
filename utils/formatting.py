@@ -61,7 +61,7 @@ _REPORT_WORDS = re.compile(r"rapor|bülten|tahmin|hedef fiyat|tavsiye|analiz")
 
 
 def canonical_label(label: str, narrative: str) -> str:
-    key = label.lower()
+    key = _label_key(label)
     if _BROKER_LABEL.search(key) and _REPORT_WORDS.search(narrative.lower()):
         return "Analist raporu"
     for pattern, canonical in _LABEL_ALIASES:
