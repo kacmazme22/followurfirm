@@ -137,8 +137,10 @@ async def _build_company_report(
         digest_run.add_error(SourceType.GOOGLE_NEWS, ticker.symbol, google_result.error)
 
     ir_pages = settings.yaml.sources.company_ir_pages
-    if ir_pages.enabled and ir_pages.urls.get(ticker.symbol):
-        ir_result = await IrPageScraper(ticker, ir_pages.urls[ticker.symbol], memory, _GOOGLE_NEWS_POLITENESS).run()
+    if ir_pages.enabled:
+        ir_result = await IrPageScraper(
+            ticker, memory, _GOOGLE_NEWS_POLITENESS, pinned_pages=ir_pages.urls.get(ticker.symbol)
+        ).run()
         raw_items += ir_result.items
         if ir_result.error:
             digest_run.add_error(SourceType.COMPANY_IR, ticker.symbol, ir_result.error)

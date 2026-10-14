@@ -104,7 +104,8 @@ class MarketBriefConfig(BaseModel):
 
 class CompanyIrPagesConfig(BaseModel):
     enabled: bool = False
-    # ticker -> IR pages whose document links are watched (scrapers/ir_scraper.py)
+    # Optional ticker -> pinned IR pages; without an entry the pages are
+    # found by search (scrapers/ir_scraper.py).
     urls: dict[str, list[str]] = Field(default_factory=dict)
 
 

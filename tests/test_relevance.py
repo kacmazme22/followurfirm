@@ -356,7 +356,7 @@ def test_ir_document_links_and_first_read_seeding():
     ]
 
     memory = DigestMemory()
-    scraper = IrPageScraper(TickerConfig(symbol="AKBNK", name="Akbank"), [], memory, PolitenessConfig())
+    scraper = IrPageScraper(TickerConfig(symbol="AKBNK", name="Akbank"), memory, PolitenessConfig())
     first = dict(list(links.items())[:2])
     assert scraper._new_documents("p", first) == []  # first read: recorded only
     items = scraper._new_documents("p", links)
@@ -374,3 +374,28 @@ def test_results_date_label_and_same_year_range():
     ])
     assert [s.subheading for s in out] == ["Bilanço tarihi"]
     assert fix_year_ranges("2026‑2026 3. çeyrek", "") == "2026 3. çeyrek"
+
+
+def test_ir_discovery_helpers():
+    from config.settings import TickerConfig
+    from scrapers.ir_scraper import is_company_site, listing_pages, name_tokens, search_result_urls
+
+    gubrf = TickerConfig(symbol="GUBRF", name="Gübre Fabrikaları")
+    assert name_tokens(gubrf) == ["gubre", "gubrf"]
+    assert is_company_site("https://www.gubretas.com.tr/yatirimci-iliskileri", gubrf)
+    assert not is_company_site("https://www.kap.org.tr/tr/sirket-bilgileri/ozet/123", gubrf)
+    assert is_company_site("https://www.koc.com.tr/yatirimci-iliskileri", TickerConfig(symbol="KCHOL", name="Koç Holding"))
+    assert not is_company_site("https://tr.investing.com/equities/koc-holding", TickerConfig(symbol="KCHOL", name="Koç Holding"))
+
+    rss = """<rss><channel><item><title>Akbank Yatırımcı İlişkileri</title><link>https://www.akbankinvestorrelations.com/tr</link></item>
+    <item><title>Akbank</title><link>https://www.investing.com/akbank</link></item></channel></rss>"""
+    assert search_result_urls(rss) == ["https://www.akbankinvestorrelations.com/tr", "https://www.investing.com/akbank"]
+    ddg = '<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fyeo.com.tr%2Fyatirimci-iliskileri-birimi%2F&rut=x">YEO</a>'
+    assert search_result_urls(ddg) == ["https://yeo.com.tr/yatirimci-iliskileri-birimi/"]
+
+    home = """<a href="/tr/yayinlar/sunumlar/Kurumsal-sunum/314/0/0">Kurumsal sunum</a>
+    <a href="/tr/kariyer">Kariyer</a><a href="https://twitter.com/akbank">Sunumlar</a>
+    <a href="/tr/images/pdf/x.pdf">Sunum</a><a href="/en/presentations">Presentations</a>"""
+    assert listing_pages(home, "https://www.akbankinvestorrelations.com/tr") == [
+        "https://www.akbankinvestorrelations.com/tr/yayinlar/sunumlar/Kurumsal-sunum/314/0/0"
+    ]

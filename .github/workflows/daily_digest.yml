@@ -101,14 +101,6 @@ jobs:
             curl -s -o /dev/null --max-time 20 -w "$url -> HTTP %{http_code}, connect %{time_connect}s\n" "$url" || echo "$url -> unreachable"
           done
 
-      # Candidate pages for upcoming sources (company IR pages, TCMB, TÜİK):
-      # the sandbox the code is written in can't reach them, so this records
-      # from a real runner where each one lands and how many PDF links it has.
-      - name: Probe candidate sources
-        if: steps.guard.outputs.skip != 'true'
-        continue-on-error: true
-        run: python scripts/probe_sources.py
-
       - name: Run digest pipeline
         if: steps.guard.outputs.skip != 'true'
         env:
