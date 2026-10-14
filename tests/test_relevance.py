@@ -290,3 +290,21 @@ def test_kap_text_block_without_other_fields():
     </body></html>"""
     text = structured_text(html, "https://www.kap.org.tr/tr/Bildirim/1")
     assert text == "Açıklama: Rekabet Kurulu soruşturması 1,71 mlr TL idari para cezası ile uzlaşmayla sonuçlanmıştır."
+
+
+def test_polish_canonical_labels_isin_and_dates():
+    from scrapers.models import SynthesizedSection
+    from utils.formatting import polish_sections
+
+    sections = [
+        SynthesizedSection(subheading="Tahvil İhracı", narrative="173,75 mn TL tahvil sattı, vade 6 Dec 2027, ISIN TRSAKBKA2716.", source_urls=[]),
+        SynthesizedSection(subheading="İzin", narrative="SPK ihraç izni verdi.", source_urls=[]),
+        SynthesizedSection(subheading="İzin", narrative="Bakanlık tesis için çevre izni verdi.", source_urls=[]),
+        SynthesizedSection(subheading="İş Yatırım", narrative="İş Yatırım 3Ç kar tahmini raporu yayımladı (rakamlar haberde yer almıyor).", source_urls=[]),
+        SynthesizedSection(subheading="Ceza", narrative="1,71 mlr TL ceza ödendi.", source_urls=[]),
+    ]
+    out = {s.subheading: s.narrative for s in polish_sections(sections)}
+    assert out["Borçlanma"] == "173,75 mn TL tahvil sattı, vade 6 Aralık 2027.\n\nSPK ihraç izni verdi."
+    assert out["Analist raporu"] == "İş Yatırım 3Ç kar tahmini raporu yayımladı."
+    assert out["Dava"] == "1,71 mlr TL ceza ödendi."
+    assert out["İzin"] == "Bakanlık tesis için çevre izni verdi."  # not a borrowing permit

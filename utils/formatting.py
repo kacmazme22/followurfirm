@@ -41,6 +41,43 @@ def _abbreviate(value: int) -> str:
 _THOUSANDS_OF_MILLIONS = re.compile(r"(?<![\d.,])(\d{1,3})[.,](\d{3})(?:,(\d+))? ?(mn|milyon)\b")
 
 
+# Things the model was told not to write and wrote anyway (2026-10-14):
+# "ISIN TRSAKBKA2716" in a bond item, "(rakamlar haberde yer almıyor)".
+_ISIN = re.compile(r"[;,]?\s*ISIN(?: kodu)?:?\s*[A-Z]{2}[A-Z0-9]{9}\d")
+_META_REMARK = re.compile(
+    r"\s*\([^()]*(?:yer almıyor|yer almamakta|detaylandırılmamış|belirtilmemiş|belirtilmiyor|haberde yok)[^()]*\)"
+)
+
+# One label per kind of event, so that merge_same_label can put e.g. a bond
+# sale and two issuance permits under one "Borçlanma" heading; the model
+# called them "Tahvil İhracı" and "İzin" in the same report.
+_LABEL_ALIASES = (
+    (re.compile(r"tahvil|bono|ihraç|borçlanma|sukuk|eurobond|kira sertifika"), "Borçlanma"),
+    (re.compile(r"ceza|soruşturma|dava|uzlaşma"), "Dava"),
+    (re.compile(r"bilanço tarihi|finansal takvim"), "Bilanço tarihi"),
+)
+_BROKER_LABEL = re.compile(r"yatırım|menkul|securities|research")
+_REPORT_WORDS = re.compile(r"rapor|bülten|tahmin|hedef fiyat|tavsiye|analiz")
+
+
+def canonical_label(label: str, narrative: str) -> str:
+    key = label.lower()
+    if _BROKER_LABEL.search(key) and _REPORT_WORDS.search(narrative.lower()):
+        return "Analist raporu"
+    for pattern, canonical in _LABEL_ALIASES:
+        if pattern.search(key):
+            return canonical
+    if key.rstrip(".") in ("izin", "onay", "spk onayı", "spk izni") and re.search(r"ihraç|borçlanma", narrative.lower()):
+        return "Borçlanma"
+    return label
+
+
+def clean_prose(text: str) -> str:
+    text = text.replace("\u202f", " ").replace("\u00a0", " ")
+    text = _ISIN.sub("", text)
+    return _META_REMARK.sub("", text)
+
+
 def turkish_numbers(text: str) -> str:
     """1.713.897.558 TL -> 1,71 mlr TL; 30,000,000,000 TRY -> 30 mlr TL;
     1.713,9 mn TL -> 1,71 mlr TL; 05 Oct 2026 -> 5 Ekim 2026."""
@@ -52,6 +89,7 @@ def turkish_numbers(text: str) -> str:
         value = float(f"{match.group(1)}{match.group(2)}.{match.group(3) or 0}") * 1_000_000
         return _abbreviate(int(value))
 
+    text = text.replace("\u202f", " ").replace("\u00a0", " ")
     text = _GROUPED_NUMBER.sub(replace, text)
     text = _THOUSANDS_OF_MILLIONS.sub(millions, text)
     text = re.sub(r"\bTRY\b", "TL", text)
@@ -80,9 +118,11 @@ def merge_same_label(sections: list[SynthesizedSection]) -> list[SynthesizedSect
 
 
 def polish_sections(sections: list[SynthesizedSection]) -> list[SynthesizedSection]:
+    for section in sections:
+        section.subheading = canonical_label(section.subheading, section.narrative)
     result = merge_same_label(sections)
     for section in result:
-        section.narrative = turkish_numbers(section.narrative)
+        section.narrative = turkish_numbers(clean_prose(section.narrative))
         section.subheading = turkish_numbers(section.subheading)
     return result
 
@@ -107,5 +147,5 @@ def polish_report(report: SynthesizedCompanyReport) -> SynthesizedCompanyReport:
             new_sections[category] = kept
     report.sections_by_category = new_sections
     if report.summary:
-        report.summary = turkish_numbers(report.summary)
+        report.summary = turkish_numbers(clean_prose(report.summary))
     return report

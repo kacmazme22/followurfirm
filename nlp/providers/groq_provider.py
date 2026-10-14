@@ -193,6 +193,7 @@ YAZIM:
 - Okuyucu linke tıklamadan anlamalı: haberin özündeki rakamı (hedef fiyat ve önceki değeri, tavsiye, tutar, oran) mutlaka yaz. "Yeni hedef fiyatını duyurdu" gibi rakamsız bir cümle YASAK.
 - Ham metni kopyalama; bildirim dilini ("Şirketimiz", "kamuoyuna duyurulur") ve içi boş yorumları ("dikkat çekecek", "önem taşımaktadır", "olumlu etki") yazma.
 - AYNI OLAY = TEK MADDE: bir olayın KAP bildirimi ve onu aktaran haberler (ör. Rekabet Kurulu cezasının KAP açıklaması + "Akbank'a 1,7 milyar TL ceza" haberleri; bilanço tarihinin KAP finansal takvimi + "bilançoyu 27 Ekim'de açıklayacak" haberleri) tek maddedir. Farklı kaynaklarda farklı yazılmış aynı tutar (1.713.897.558 TL = 1,7 milyar TL) AYNI rakamdır: ASLA toplama, iki ayrı olay sanma.
+- Röportaj, demeç ve görüş yazıları analist raporu DEĞİLDİR; etiketleri "Röportaj". Etiketi kurum adı yapma ("İş Yatırım" değil "Analist raporu"). Metne "(içerik detaylandırılmamış)", "(rakamlar haberde yer almıyor)" gibi parantez içi açıklama ekleme.
 - Aynı TÜRDEKİ farklı olaylara (ör. iki ayrı borçlanma) AYNI etiketi ver; bunlar tek başlık altında ayrı paragraflar olarak gösterilecek.
 - Rakamları Türkçe yaz: "30 mlr TL", "173,8 mn TL", ondalık için virgül; "30,000,000,000", "TRY", "Oct" gibi İngilizce biçimler YASAK.
 - Aynı rapor/olay için birden fazla haber varsa (ör. aynı aracı kurum raporunun hedef fiyat ve sektör görünümü haberleri) TEK maddede birleştir.
