@@ -8,9 +8,10 @@ site. Nothing here is configured per company: for every tracked ticker
   1. the IR site is found from the company's website as listed on its KAP
      company page (linked from any of its filings): the site's "Yatırımcı
      İlişkileri" link, on the same site or on a separate domain carrying
-     the company name (akbankinvestorrelations.com). Failing that, a web
-     search ("<company> yatırımcı ilişkileri"), keeping only results whose
-     domain carries part of the company's name;
+     the company name (akbankinvestorrelations.com). The KAP page comes
+     from a filing's link, or from KAP's list of BIST companies. (Web
+     search was tried first: from GitHub's runners Bing's RSS answered
+     with unrelated results and DuckDuckGo with a bot check.)
   2. on that page, links to document listings ("Sunumlar", "Finansal
      Raporlar", "Yayınlar") on the same site are followed one level down;
   3. the document links (PDFs, report pages) on those pages are compared
@@ -38,17 +39,15 @@ import logging
 import re
 import unicodedata
 from datetime import date, timedelta
-from urllib.parse import parse_qs, quote, unquote, urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
-import warnings
-
-import feedparser
-from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
+from bs4 import BeautifulSoup
 
 from config.constants import SourceType
 from config.settings import PolitenessConfig, TickerConfig
 from scrapers.base import BaseScraper
 from scrapers.kap_scraper import BROWSER_HEADERS as KAP_HEADERS
+from scrapers.kap_scraper import DETAIL_HOSTS as KAP_HOSTS
 from scrapers.models import RawScrapedItem
 from utils.memory import DigestMemory
 
@@ -59,8 +58,7 @@ MAX_LISTING_PAGES = 4
 REDISCOVER_DAYS = 30
 RETRY_DISCOVERY_DAYS = 7
 
-BING_WEB_RSS = "https://www.bing.com/search?format=rss&setlang=tr-TR&cc=TR&q="
-DUCKDUCKGO_HTML = "https://html.duckduckgo.com/html/?q="
+KAP_COMPANY_LIST = "/tr/bist-sirketler"
 
 _DOCUMENT_LINK = re.compile(r"\.pdf(\?|$)|/detay/|/yil-liste/", re.IGNORECASE)
 _ENGLISH_PATH = re.compile(r"/en/|_en\.pdf|-en\.pdf|english", re.IGNORECASE)
@@ -72,7 +70,6 @@ _DOCUMENT_WORDS = re.compile(
 _LISTING_WORDS = re.compile(
     r"sunum|rapor|yay[ıi]n|finansal|sonu[cç]|presentation|report|publication", re.IGNORECASE
 )
-_IR_WORDS = re.compile(r"yat[ıi]r[ıi]mc[ıi]|investor|\bir\b", re.IGNORECASE)
 # Words of a company name that say nothing about which company it is.
 _GENERIC_NAME_WORDS = {
     "turk", "turkiye", "anonim", "sirketi", "holding", "teknoloji", "fabrikalari", "sanayi", "ticaret",
@@ -153,36 +150,44 @@ def company_website(html: str, ticker: TickerConfig) -> str | None:
     return None
 
 
+_IR_LABEL = re.compile(r"yat[ıi]r[ıi]mc[ıi] ili[şs]kileri|investor relations", re.IGNORECASE)
+_IR_PATH = re.compile(r"yatirimci|investor", re.IGNORECASE)
+
+
 def ir_link_on_site(html: str, page_url: str, ticker: TickerConfig) -> str | None:
     """The "Yatırımcı İlişkileri" link on a company site: same site, or a
-    separate IR domain that carries the company name (akbankinvestorrelations.com)."""
+    separate IR domain that carries the company name
+    (akbankinvestorrelations.com). A link labelled "Yatırımcı İlişkileri"
+    wins over one that only has "investor" in its address; akbank.com also
+    links its brokerage, yatirim.akbank.com, which must not be taken."""
     soup = BeautifulSoup(html, "html.parser")
+    by_label, by_path = [], []
     for anchor in soup.find_all("a", href=True):
-        href = urljoin(page_url, anchor["href"].strip())
+        href = urljoin(page_url, anchor["href"].strip()).split("#")[0]
+        if not href.startswith("http") or _ENGLISH_PATH.search(href):
+            continue
+        if urlparse(href).netloc != urlparse(page_url).netloc and not is_company_site(href, ticker):
+            continue
         label = " ".join(anchor.get_text(" ").split())
-        if not _IR_WORDS.search(f"{label} {unquote(urlparse(href).path)} {urlparse(href).netloc}"):
-            continue
-        if _ENGLISH_PATH.search(href) or not href.startswith("http"):
-            continue
-        if urlparse(href).netloc == urlparse(page_url).netloc or is_company_site(href, ticker):
-            return href
+        if _IR_LABEL.search(label):
+            by_label.append(href)
+        elif _IR_PATH.search(unquote(urlparse(href).netloc + urlparse(href).path)):
+            by_path.append(href)
+    return (by_label + by_path or [None])[0]
+
+
+_KAP_COMPANY_PATH = re.compile(r"/tr/sirket-bilgileri/(?:ozet|genel)/[\w-]+")
+
+
+def kap_company_path(html: str, symbol: str) -> str | None:
+    """The company page link next to `symbol` in KAP's company list (the
+    page is a Next.js app: links and codes may sit in HTML or in its JSON)."""
+    symbol_re = re.compile(rf"(?<![A-Z0-9]){re.escape(symbol)}(?![A-Z0-9])")
+    for match in _KAP_COMPANY_PATH.finditer(html):
+        window = html[max(0, match.start() - 400): match.end() + 400]
+        if symbol_re.search(window):
+            return match.group(0)
     return None
-
-
-def search_result_urls(text: str) -> list[str]:
-    """Result links from a Bing web RSS feed or a DuckDuckGo HTML page."""
-    feed = feedparser.parse(text)
-    urls = [entry.get("link") for entry in feed.entries if entry.get("link")]
-    if urls:
-        return urls
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", XMLParsedAsHTMLWarning)
-        soup = BeautifulSoup(text, "html.parser")
-    for anchor in soup.select("a.result__a, a.result-link"):
-        href = anchor.get("href", "")
-        target = parse_qs(urlparse(href).query).get("uddg")  # DuckDuckGo redirect
-        urls.append(unquote(target[0]) if target else href)
-    return [u for u in urls if u.startswith("http")]
 
 
 class IrPageScraper(BaseScraper):
@@ -243,12 +248,15 @@ class IrPageScraper(BaseScraper):
                 ir_link = ir_link_on_site(html, website, self.ticker)
                 logger.info("%s: KAP'taki web sitesi %s, IR bağlantısı: %s", self.ticker.symbol, website, ir_link)
                 return ir_link or website
-        return await self._search_ir_home()
+        return None
 
     async def _website_from_kap(self) -> str | None:
         """The company's own site, as listed on its KAP company page (linked
-        from any of its filings)."""
+        from its filings, or found in KAP's list of BIST companies)."""
         if not self.kap_company_url:
+            self.kap_company_url = await self._kap_company_url_from_list()
+        if not self.kap_company_url:
+            logger.info("%s: KAP şirket sayfası bulunamadı", self.ticker.symbol)
             return None
         try:
             response = await self._get(self.kap_company_url, headers=dict(KAP_HEADERS))
@@ -258,23 +266,16 @@ class IrPageScraper(BaseScraper):
             return None
         return company_website(response.text, self.ticker)
 
-    async def _search_ir_home(self) -> str | None:
-        query = quote(f"{self.ticker.name} yatırımcı ilişkileri")
-        for search_url in (BING_WEB_RSS + query, DUCKDUCKGO_HTML + query):
+    async def _kap_company_url_from_list(self) -> str | None:
+        for host in KAP_HOSTS:
             try:
-                response = await self._get(search_url)
+                response = await self._get(f"{host}{KAP_COMPANY_LIST}", headers=dict(KAP_HEADERS))
+                response.raise_for_status()
             except Exception as exc:
-                logger.info("%s: IR araması başarısız (%s): %s", self.ticker.symbol, search_url, exc)
+                logger.info("KAP şirket listesi okunamadı (%s): %s", host, exc)
                 continue
-            results = search_result_urls(response.text)
-            candidates = [u for u in results if is_company_site(u, self.ticker)]
-            logger.info(
-                "%s: IR araması HTTP %s, %d sonuç, %d şirket sitesi (ilk sonuçlar: %s)",
-                self.ticker.symbol, response.status_code, len(results), len(candidates), results[:3],
-            )
-            if candidates:
-                # Prefer a result that is itself an IR page over the company home page.
-                return next((u for u in candidates if _IR_WORDS.search(unquote(u))), candidates[0])
+            path = kap_company_path(response.text, self.ticker.symbol)
+            return f"{host}{path}" if path else None
         return None
 
     async def _html(self, url: str) -> str | None:

@@ -25,7 +25,7 @@ _MONTHS_EN_TR = {
     "Jan": "Ocak", "Feb": "Şubat", "Mar": "Mart", "Apr": "Nisan", "May": "Mayıs", "Jun": "Haziran",
     "Jul": "Temmuz", "Aug": "Ağustos", "Sep": "Eylül", "Oct": "Ekim", "Nov": "Kasım", "Dec": "Aralık",
 }
-_EN_DATE = re.compile(r"\b(\d{1,2}) (" + "|".join(_MONTHS_EN_TR) + r")[a-z]* (\d{4})\b")
+_EN_DATE = re.compile(r"\b(\d{1,2}) (" + "|".join(_MONTHS_EN_TR) + r")[a-z]*\.?( \d{4})?\b")
 
 
 def _abbreviate(value: int) -> str:
@@ -112,7 +112,7 @@ def turkish_numbers(text: str) -> str:
     text = _GROUPED_NUMBER.sub(replace, text)
     text = _THOUSANDS_OF_MILLIONS.sub(millions, text)
     text = re.sub(r"\bTRY\b", "TL", text)
-    text = _EN_DATE.sub(lambda m: f"{int(m.group(1))} {_MONTHS_EN_TR[m.group(2)]} {m.group(3)}", text)
+    text = _EN_DATE.sub(lambda m: f"{int(m.group(1))} {_MONTHS_EN_TR[m.group(2)]}{m.group(3) or ''}", text)
     return text
 
 

@@ -378,7 +378,7 @@ def test_results_date_label_and_same_year_range():
 
 def test_ir_discovery_helpers():
     from config.settings import TickerConfig
-    from scrapers.ir_scraper import is_company_site, listing_pages, name_tokens, search_result_urls
+    from scrapers.ir_scraper import is_company_site, listing_pages, name_tokens
 
     gubrf = TickerConfig(symbol="GUBRF", name="Gübre Fabrikaları")
     assert name_tokens(gubrf) == ["gubre", "gubrf"]
@@ -386,12 +386,6 @@ def test_ir_discovery_helpers():
     assert not is_company_site("https://www.kap.org.tr/tr/sirket-bilgileri/ozet/123", gubrf)
     assert is_company_site("https://www.koc.com.tr/yatirimci-iliskileri", TickerConfig(symbol="KCHOL", name="Koç Holding"))
     assert not is_company_site("https://tr.investing.com/equities/koc-holding", TickerConfig(symbol="KCHOL", name="Koç Holding"))
-
-    rss = """<rss><channel><item><title>Akbank Yatırımcı İlişkileri</title><link>https://www.akbankinvestorrelations.com/tr</link></item>
-    <item><title>Akbank</title><link>https://www.investing.com/akbank</link></item></channel></rss>"""
-    assert search_result_urls(rss) == ["https://www.akbankinvestorrelations.com/tr", "https://www.investing.com/akbank"]
-    ddg = '<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fyeo.com.tr%2Fyatirimci-iliskileri-birimi%2F&rut=x">YEO</a>'
-    assert search_result_urls(ddg) == ["https://yeo.com.tr/yatirimci-iliskileri-birimi/"]
 
     home = """<a href="/tr/yayinlar/sunumlar/Kurumsal-sunum/314/0/0">Kurumsal sunum</a>
     <a href="/tr/kariyer">Kariyer</a><a href="https://twitter.com/akbank">Sunumlar</a>
@@ -408,7 +402,7 @@ def test_ir_home_from_kap_company_page():
     akbank = TickerConfig(symbol="AKBNK", name="Akbank")
     kap_page = '<script>{"web":"https://www.kap.org.tr/tr/x","internetAdresi":"http://www.akbank.com"}</script>'
     assert company_website(kap_page, akbank) == "http://www.akbank.com/"
-    site = """<a href="/tr/bireysel">Bireysel</a>
+    site = """<a href="/tr/bireysel">Bireysel</a><a href="https://yatirim.akbank.com/">Akbank Yatırım</a>
     <a href="https://www.akbankinvestorrelations.com/tr">Yatırımcı İlişkileri</a>"""
     assert ir_link_on_site(site, "https://www.akbank.com/", akbank) == "https://www.akbankinvestorrelations.com/tr"
     koc = TickerConfig(symbol="KCHOL", name="Koç Holding")
@@ -430,3 +424,13 @@ def test_fine_paragraph_moved_out_of_borrowing():
         ("Dava", "Rekabet Kurulu soruşturmasında 1,71 mlr TL idari para cezası ödendi."),
         ("Borçlanma", "SPK TL borçlanma aracı ihraç yetkisi verdi."),
     ]
+
+
+def test_kap_company_path_from_list():
+    from scrapers.ir_scraper import kap_company_path
+
+    html = """<a href="/tr/sirket-bilgileri/ozet/2413-akbank-t-a-s">AKBANK T.A.Ş.</a><span>AKBNK</span>
+    """ + "x" * 900 + """<a href="/tr/sirket-bilgileri/ozet/1234-koc-holding-a-s">KOÇ HOLDİNG A.Ş.</a><span>KCHOL</span>"""
+    assert kap_company_path(html, "KCHOL") == "/tr/sirket-bilgileri/ozet/1234-koc-holding-a-s"
+    assert kap_company_path(html, "AKBNK") == "/tr/sirket-bilgileri/ozet/2413-akbank-t-a-s"
+    assert kap_company_path(html, "YEOTK") is None
