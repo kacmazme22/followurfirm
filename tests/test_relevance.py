@@ -435,3 +435,44 @@ def test_kap_company_paths_nearest_first():
     assert kap_company_paths(html, "KCHOL")[0] == "/tr/sirket-bilgileri/ozet/1234-koc-holding-a-s"
     assert kap_company_paths(html, "AKBNK")[0] == "/tr/sirket-bilgileri/ozet/2413-akbank-t-a-s"
     assert kap_company_paths(html, "YEOTK") == []
+
+
+def test_company_website_written_without_scheme():
+    from config.settings import TickerConfig
+    from scrapers.ir_scraper import company_website
+
+    html = '<div>İnternet Adresi</div><div>www.koc.com.tr</div><a href="https://www.kap.org.tr/x">KAP</a>'
+    assert company_website(html, TickerConfig(symbol="KCHOL", name="Koç Holding")) == "https://www.koc.com.tr/"
+
+
+async def test_groq_falls_back_when_daily_quota_is_used_up():
+    import groq
+    import httpx
+
+    from nlp.providers import groq_provider
+    from nlp.providers.groq_provider import GroqProvider
+
+    calls = []
+
+    class Completions:
+        async def create(self, model, **kwargs):
+            calls.append(model)
+            if model == "openai/gpt-oss-120b":
+                request = httpx.Request("POST", "https://api.groq.com")
+                raise groq.RateLimitError(
+                    "Rate limit reached ... on tokens per day (TPD): Limit 200000",
+                    response=httpx.Response(429, request=request), body=None,
+                )
+            return "ok"
+
+    provider = GroqProvider.__new__(GroqProvider)
+    provider._model = "openai/gpt-oss-120b"
+    provider._reasoning_effort = None
+    provider._client = type("C", (), {"chat": type("Ch", (), {"completions": Completions()})()})()
+    groq_provider._EXHAUSTED_MODELS.clear()
+    try:
+        assert await provider._create(messages=[]) == "ok"
+        assert await provider._create(messages=[]) == "ok"
+        assert calls == ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "openai/gpt-oss-20b"]
+    finally:
+        groq_provider._EXHAUSTED_MODELS.clear()

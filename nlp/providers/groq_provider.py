@@ -256,6 +256,20 @@ class _Parsed(NamedTuple):
     summary: str | None
 
 
+# Groq's free tier limits tokens per day per model (200k for gpt-oss-120b).
+# On 2026-10-14 a series of test runs used it up and the next run fell back
+# to the raw list; the 07:00 mail would have too. When a model's daily quota
+# is reached, the remaining calls of the run go to the next model, which has
+# a quota of its own.
+FALLBACK_MODELS = ("openai/gpt-oss-20b", "llama-3.3-70b-versatile")
+_EXHAUSTED_MODELS: set[str] = set()
+
+
+def _is_daily_quota(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "per day" in text or "(tpd)" in text or "(rpd)" in text
+
+
 class GroqProvider(SummarizerProvider):
     def __init__(self, settings: AppConfig, max_tokens: int = DEFAULT_MAX_TOKENS) -> None:
         self._client = AsyncGroq(api_key=settings.env.groq_api_key)
@@ -282,20 +296,38 @@ class GroqProvider(SummarizerProvider):
             sections_by_category=sections_by_category,
         )
 
+    def _current_model(self) -> str | None:
+        return next((m for m in (self._model, *FALLBACK_MODELS) if m not in _EXHAUSTED_MODELS), None)
+
     async def _create(self, **kwargs):
-        """chat.completions.create with low reasoning effort; if the API
-        rejects the parameter (older model/SDK), it's dropped for the rest
-        of the run and the call is repeated without it."""
+        """chat.completions.create on the first model whose daily token
+        quota isn't used up (see FALLBACK_MODELS)."""
+        while True:
+            model = self._current_model()
+            if model is None:
+                raise RuntimeError("Groq: tüm modellerin günlük token kotası doldu")
+            try:
+                return await self._create_with(model, **kwargs)
+            except groq.RateLimitError as exc:
+                if not _is_daily_quota(exc):
+                    raise
+                _EXHAUSTED_MODELS.add(model)
+                logger.warning("Groq %s günlük token kotası doldu, sonraki model: %s", model, self._current_model())
+
+    async def _create_with(self, model: str, **kwargs):
+        """With low reasoning effort; if the API rejects the parameter (a
+        model without reasoning, older SDK), it's dropped for the rest of
+        the run and the call is repeated without it."""
         effort = getattr(self, "_reasoning_effort", REASONING_EFFORT)
         if effort:
             try:
-                return await self._client.chat.completions.create(model=self._model, reasoning_effort=effort, **kwargs)
+                return await self._client.chat.completions.create(model=model, reasoning_effort=effort, **kwargs)
             except (groq.BadRequestError, TypeError) as exc:
                 if "reasoning" not in str(exc).lower():
                     raise
-                logger.warning("reasoning_effort desteklenmiyor, parametresiz devam: %s", exc)
+                logger.warning("reasoning_effort desteklenmiyor (%s), parametresiz devam: %s", model, exc)
                 self._reasoning_effort = None
-        return await self._client.chat.completions.create(model=self._model, **kwargs)
+        return await self._client.chat.completions.create(model=model, **kwargs)
 
     async def pick_headline(self, candidates: list[str]) -> str | None:
         """The user wanted the subject to open with the day's most striking

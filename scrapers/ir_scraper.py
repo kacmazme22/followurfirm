@@ -134,7 +134,9 @@ def _label_from_filename(url: str) -> str:
     return " ".join(re.sub(r"[-_]+", " ", name).split())
 
 
-_URL_IN_TEXT = re.compile(r"https?://[\w.-]+\.[a-z]{2,}(?:/[\w./%-]*)?", re.IGNORECASE)
+# KAP writes the site as "http://www.akbank.com" for some companies and as a
+# bare "www.koc.com.tr" for others (YEOTK, GUBRF, KCHOL on 2026-10-14).
+_URL_IN_TEXT = re.compile(r"(?:https?://|(?<![\w./])www\.)[\w.-]+\.[a-z]{2,}(?:/[\w./%-]*)?", re.IGNORECASE)
 _SKIP_HOSTS = ("kap.org.tr", "mkk.com.tr", "borsaistanbul.com", "spk.gov.tr", "google", "facebook", "twitter",
                "linkedin", "instagram", "youtube", "w3.org", "schema.org")
 
@@ -142,8 +144,9 @@ _SKIP_HOSTS = ("kap.org.tr", "mkk.com.tr", "borsaistanbul.com", "spk.gov.tr", "g
 def company_website(html: str, ticker: TickerConfig) -> str | None:
     """The company's site among the URLs on its KAP page ("İnternet Adresi")."""
     for url in _URL_IN_TEXT.findall(html):
-        host = urlparse(url).netloc.lower()
-        if any(skip in host for skip in _SKIP_HOSTS):
+        if not url.lower().startswith("http"):
+            url = f"https://{url}"
+        if any(skip in urlparse(url).netloc.lower() for skip in _SKIP_HOSTS):
             continue
         if is_company_site(url, ticker):
             return f"{urlparse(url).scheme}://{urlparse(url).netloc}/"
