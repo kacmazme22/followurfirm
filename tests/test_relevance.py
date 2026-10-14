@@ -476,3 +476,12 @@ async def test_groq_falls_back_when_daily_quota_is_used_up():
         assert calls == ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "openai/gpt-oss-20b"]
     finally:
         groq_provider._EXHAUSTED_MODELS.clear()
+
+
+def test_fallback_model_number_styles():
+    from utils.formatting import turkish_numbers
+
+    assert turkish_numbers("olasılık 22 %’den 49,3 %’e yükseldi") == "olasılık %22’den %49,3’e yükseldi"
+    assert turkish_numbers("%1,08 düşüşle 12 118,29 puanda") == "%1,08 düşüşle 12.118,29 puanda"
+    assert turkish_numbers("8 430 000 000 TL’den 9 132 064 896,755 TL’ye") == "8,43 mlr TL’den 9,13 mlr TL’ye"
+    assert turkish_numbers("15 Ekim 2026 100 baz puan") == "15 Ekim 2026 100 baz puan"

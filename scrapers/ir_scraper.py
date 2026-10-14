@@ -59,6 +59,7 @@ REDISCOVER_DAYS = 30
 RETRY_DISCOVERY_DAYS = 7
 
 KAP_COMPANY_LIST = "/tr/bist-sirketler"
+COMMON_IR_PATHS = ("/yatirimci-iliskileri", "/tr/yatirimci-iliskileri", "/yatirimci-iliskileri/", "/investor-relations")
 
 _DOCUMENT_LINK = re.compile(r"\.pdf(\?|$)|/detay/|/yil-liste/", re.IGNORECASE)
 _ENGLISH_PATH = re.compile(r"/en/|_en\.pdf|-en\.pdf|english", re.IGNORECASE)
@@ -254,7 +255,7 @@ class IrPageScraper(BaseScraper):
         if website:
             html = await self._html(website)
             if html is not None:
-                ir_link = ir_link_on_site(html, website, self.ticker)
+                ir_link = ir_link_on_site(html, website, self.ticker) or await self._common_ir_path(website)
                 logger.info("%s: KAP'taki web sitesi %s, IR bağlantısı: %s", self.ticker.symbol, website, ir_link)
                 return ir_link or website
         return None
@@ -278,6 +279,19 @@ class IrPageScraper(BaseScraper):
                 self.kap_company_url = url
                 return website
         logger.info("%s: KAP şirket sayfası bulunamadı (%d aday)", self.ticker.symbol, len(candidates))
+        return None
+
+    async def _common_ir_path(self, website: str) -> str | None:
+        """When the home page's menu isn't in its HTML (yeo.com.tr), the
+        usual IR addresses are tried on the same site."""
+        for path in COMMON_IR_PATHS:
+            url = urljoin(website, path)
+            try:
+                response = await self._get(url)
+            except Exception:
+                continue
+            if response.status_code == 200 and urlparse(str(response.url)).netloc == urlparse(website).netloc:
+                return str(response.url)
         return None
 
     async def _kap_company_urls_from_list(self) -> list[str]:

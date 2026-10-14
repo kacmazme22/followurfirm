@@ -60,7 +60,12 @@ _LABEL_ALIASES = (
     (re.compile(r"tahvil|bono|ihraç|borçlanma|sukuk|eurobond|kira sertifika"), "Borçlanma"),
     (re.compile(r"ceza|soruşturma|dava|uzlaşma"), "Dava"),
     (re.compile(r"bilanço tarihi|finansal takvim"), "Bilanço tarihi"),
+    (re.compile(r"analist|aracı kurum raporu|hedef fiyat"), "Analist raporu"),
 )
+# A generic label over a plainly borrowing narrative ("Yatırım: ... tahvil
+# sattı", gpt-oss-20b on 2026-10-14).
+_GENERIC_LABELS = {"yatırım", "finansman", "sermaye piyasası", "diğer", "genel"}
+_BORROWING_TEXT = re.compile(r"tahvil|bono|borçlanma aracı|ihraç tavanı|sukuk|eurobond")
 # "Finansal sonuç: ... bilanço tarihini açıkladı" is a date, not a result.
 _RESULTS_DATE = re.compile(r"(bilanço|sonuç)\w* (açıklama )?tarih|açıklanacağı|açıklayacağı")
 _BROKER_LABEL = re.compile(r"yatırım|menkul|securities|research")
@@ -74,6 +79,8 @@ def canonical_label(label: str, narrative: str) -> str:
     for pattern, canonical in _LABEL_ALIASES:
         if pattern.search(key):
             return canonical
+    if key in _GENERIC_LABELS and _BORROWING_TEXT.search(narrative.lower()):
+        return "Borçlanma"
     if key.startswith("finansal sonuç") and _RESULTS_DATE.search(narrative.lower()):
         return "Bilanço tarihi"
     if key.rstrip(".") in ("izin", "onay", "spk onayı", "spk izni") and re.search(r"ihraç|borçlanma", narrative.lower()):
@@ -97,6 +104,13 @@ def clean_prose(text: str) -> str:
     return _META_SENTENCE.sub("", text).strip()
 
 
+# The fallback model (gpt-oss-20b, 2026-10-14) wrote "12 118,29 puan",
+# "8 430 000 000 TL" and "22 %": space-grouped digits and a trailing
+# percent sign.
+_SPACE_GROUPED = re.compile(r"(?<![\d.,])(\d{1,3}(?: \d{3})+)(?![\d])(?= ?(?:,\d|TL|mn|mlr|puan|lira|dolar|USD|EUR|\$|€|adet|ton|MW|\)|\.|,|;|$))")
+_PERCENT_AFTER = re.compile(r"(?<![%\d])(\d+(?:,\d+)?) ?%(?!\d)")
+
+
 def turkish_numbers(text: str) -> str:
     """1.713.897.558 TL -> 1,71 mlr TL; 30,000,000,000 TRY -> 30 mlr TL;
     1.713,9 mn TL -> 1,71 mlr TL; 05 Oct 2026 -> 5 Ekim 2026."""
@@ -109,6 +123,10 @@ def turkish_numbers(text: str) -> str:
         return _abbreviate(int(value))
 
     text = text.replace("\u202f", " ").replace("\u00a0", " ")
+    text = _SPACE_GROUPED.sub(lambda m: m.group(1).replace(" ", "."), text)
+    text = _PERCENT_AFTER.sub(r"%\1", text)
+    # kuruş on a million-plus amount ("9.132.064.896,755 TL") don't matter
+    text = re.sub(r"(?<![\d.,])(\d{1,3}(?:\.\d{3}){2,}),\d+", r"\1", text)
     text = _GROUPED_NUMBER.sub(replace, text)
     text = _THOUSANDS_OF_MILLIONS.sub(millions, text)
     text = re.sub(r"\bTRY\b", "TL", text)
