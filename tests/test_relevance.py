@@ -337,3 +337,40 @@ async def test_bing_fills_headline_only_google_items():
     await scraper.fill_headline_only([item])
     assert str(item.url) == "https://www.ornek.com/gubrf-temettu"
     assert "3,81 TL" in item.body_snippet
+
+
+def test_ir_document_links_and_first_read_seeding():
+    from config.settings import PolitenessConfig, TickerConfig
+    from scrapers.ir_scraper import IrPageScraper, document_links
+    from utils.memory import DigestMemory
+
+    html = """<a href="/tr/images/pdf/akbank_corporate_presentation.pdf">Kurumsal sunum (Corporate presentation) İndir</a>
+    <a href="/tr/finansal-raporlar/detay/2C26-Ozet-Sunum/597/1459/0">2Ç26 Konsolide Finansal Sonuçlarına İlişkin Özet Sunum</a>
+    <a href="/en/images/pdf/x.pdf">English deck</a><a href="/tr/kariyer">Kariyer</a>
+    <a href="https://yeo.com.tr/wp-content/uploads/2026/08/Yeo-Teknoloji-30.06.2026_BDR-4.pdf"></a>"""
+    links = document_links(html, "https://www.akbankinvestorrelations.com/tr")
+    assert list(links.values()) == [
+        "Kurumsal sunum (Corporate presentation)",
+        "2Ç26 Konsolide Finansal Sonuçlarına İlişkin Özet Sunum",
+        "Yeo Teknoloji 30.06.2026 BDR 4",
+    ]
+
+    memory = DigestMemory()
+    scraper = IrPageScraper(TickerConfig(symbol="AKBNK", name="Akbank"), [], memory, PolitenessConfig())
+    first = dict(list(links.items())[:2])
+    assert scraper._new_documents("p", first) == []  # first read: recorded only
+    items = scraper._new_documents("p", links)
+    assert [i.raw_url for i in items] == ["https://yeo.com.tr/wp-content/uploads/2026/08/Yeo-Teknoloji-30.06.2026_BDR-4.pdf"]
+    assert items[0].raw_title.startswith("Akbank yatırımcı ilişkileri sayfasında yeni doküman")
+
+
+def test_results_date_label_and_same_year_range():
+    from scrapers.models import SynthesizedSection
+    from utils.formatting import fix_year_ranges, polish_sections
+
+    out = polish_sections([
+        SynthesizedSection(subheading="Finansal sonuç", narrative="Akbank 3. çeyrek bilanço tarihini açıkladı.", source_urls=[]),
+        SynthesizedSection(subheading="Bilanço tarihi", narrative="Bilanço 27 Ekim'de açıklanacak.", source_urls=[]),
+    ])
+    assert [s.subheading for s in out] == ["Bilanço tarihi"]
+    assert fix_year_ranges("2026‑2026 3. çeyrek", "") == "2026 3. çeyrek"

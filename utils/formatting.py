@@ -61,6 +61,8 @@ _LABEL_ALIASES = (
     (re.compile(r"ceza|soruşturma|dava|uzlaşma"), "Dava"),
     (re.compile(r"bilanço tarihi|finansal takvim"), "Bilanço tarihi"),
 )
+# "Finansal sonuç: ... bilanço tarihini açıkladı" is a date, not a result.
+_RESULTS_DATE = re.compile(r"(bilanço|sonuç)\w* (açıklama )?tarih|açıklanacağı|açıklayacağı")
 _BROKER_LABEL = re.compile(r"yatırım|menkul|securities|research")
 _REPORT_WORDS = re.compile(r"rapor|bülten|tahmin|hedef fiyat|tavsiye|analiz")
 
@@ -72,6 +74,8 @@ def canonical_label(label: str, narrative: str) -> str:
     for pattern, canonical in _LABEL_ALIASES:
         if pattern.search(key):
             return canonical
+    if key.startswith("finansal sonuç") and _RESULTS_DATE.search(narrative.lower()):
+        return "Bilanço tarihi"
     if key.rstrip(".") in ("izin", "onay", "spk onayı", "spk izni") and re.search(r"ihraç|borçlanma", narrative.lower()):
         return "Borçlanma"
     return label
@@ -152,6 +156,8 @@ def fix_year_ranges(text: str, source_text: str) -> str:
 
     def replace(match: re.Match) -> str:
         first, second = match.group(1), match.group(2)
+        if first == second:  # "2026‑2026 3. çeyrek"
+            return first
         if first in known and second not in known:
             return first
         if second in known and first not in known:

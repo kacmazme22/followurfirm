@@ -81,6 +81,8 @@ class DigestMemory:
     def __init__(self, last_sent_at: datetime | None = None, entries: list[dict] | None = None) -> None:
         self.last_sent_at = last_sent_at
         self.entries = entries or []
+        # IR page URL -> document links seen on it (scrapers/ir_scraper.py)
+        self.ir_seen: dict[str, list[str]] = {}
         self._inputs: dict[str, list[NewsItem]] = {}
 
     def note_inputs(self, symbol: str, items: list[NewsItem]) -> None:
@@ -101,6 +103,7 @@ class DigestMemory:
             return cls()
         last = data.get("last_sent_at")
         memory = cls(datetime.fromisoformat(last) if last else None, data.get("entries", []))
+        memory.ir_seen = data.get("ir_seen", {})
         logger.info("Hafıza: son gönderim %s, %d kayıt", memory.last_sent_at, len(memory.entries))
         return memory
 
@@ -109,6 +112,7 @@ class DigestMemory:
         data = {
             "last_sent_at": self.last_sent_at.isoformat() if self.last_sent_at else None,
             "entries": self.entries,
+            "ir_seen": self.ir_seen,
         }
         path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
 

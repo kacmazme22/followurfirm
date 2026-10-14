@@ -71,8 +71,16 @@ sources:
     country: "TR"
 
   company_ir_pages:
-    enabled: false  # opt-in per ticker once IR page URLs are curated
-    urls: {}
+    enabled: true
+    # Pages that list documents in plain HTML (checked from a GitHub runner,
+    # 2026-10-14). KCHOL's list is built by JavaScript and gubretas.com.tr
+    # fails TLS verification; both are covered by KAP only.
+    urls:
+      AKBNK:
+        - "https://www.akbankinvestorrelations.com/tr"
+        - "https://www.akbankinvestorrelations.com/tr/yayinlar/sunumlar/Kurumsal-sunum/314/0/0"
+      YEOTK:
+        - "https://yeo.com.tr/sunumlar-ve-raporlar/"
 
   web_search_fallback:
     enabled: true

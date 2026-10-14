@@ -16,6 +16,7 @@ which is kept as the body when the article page itself can't be fetched.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, quote, urlparse
 
@@ -57,6 +58,7 @@ SORT_BY_DATE = "&qft=" + quote('sortbydate="1"')
 # the same story is usually on Bing too, with the publisher URL.
 TITLE_MATCH_SIMILARITY = 85
 MAX_BODY_LOOKUPS_PER_TICKER = 5
+LOOKUP_QUERY_WORDS = 7
 
 
 def feed_url(query: str, config: BingNewsConfig, newest_first: bool = True) -> str:
@@ -137,7 +139,10 @@ class BingNewsScraper(BaseScraper):
         found = 0
         for item in targets:
             try:
-                response = await self._get(feed_url(item.title, self.source_config, newest_first=False))
+                # The full headline as the query returned nothing for 11 of
+                # 12 items (2026-10-14); its first words are enough to find it.
+                query = " ".join(re.sub(r"[^\w\s%,.]", " ", item.title).split()[:LOOKUP_QUERY_WORDS])
+                response = await self._get(feed_url(query, self.source_config, newest_first=False))
             except Exception as exc:
                 logger.info("Bing başlık araması başarısız (%s): %s", item.title, exc)
                 continue

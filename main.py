@@ -28,6 +28,7 @@ from nlp.providers.noop_provider import NoopProvider
 from scrapers.bigpara_scraper import BigparaScraper
 from scrapers.bing_news_scraper import BingNewsScraper
 from scrapers.google_news_scraper import GoogleNewsScraper
+from scrapers.ir_scraper import IrPageScraper
 from scrapers.kap_scraper import KapScraper
 from scrapers.models import CompanyReport, DigestRun, RawScrapedItem, SynthesizedCompanyReport
 from templates.styles import template_colors
@@ -134,6 +135,13 @@ async def _build_company_report(
     raw_items += google_result.items
     if google_result.error:
         digest_run.add_error(SourceType.GOOGLE_NEWS, ticker.symbol, google_result.error)
+
+    ir_pages = settings.yaml.sources.company_ir_pages
+    if ir_pages.enabled and ir_pages.urls.get(ticker.symbol):
+        ir_result = await IrPageScraper(ticker, ir_pages.urls[ticker.symbol], memory, _GOOGLE_NEWS_POLITENESS).run()
+        raw_items += ir_result.items
+        if ir_result.error:
+            digest_run.add_error(SourceType.COMPANY_IR, ticker.symbol, ir_result.error)
 
     raw_items = _drop_mirrored_filings(raw_items, ticker.symbol)
     news_items = categorize_batch(raw_items)  # boilerplate items already dropped (None -> skipped)
