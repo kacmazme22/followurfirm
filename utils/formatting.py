@@ -45,7 +45,12 @@ _THOUSANDS_OF_MILLIONS = re.compile(r"(?<![\d.,])(\d{1,3})[.,](\d{3})(?:,(\d+))?
 # "ISIN TRSAKBKA2716" in a bond item, "(rakamlar haberde yer almıyor)".
 _ISIN = re.compile(r"[;,]?\s*ISIN(?: kodu)?:?\s*[A-Z]{2}[A-Z0-9]{9}\d")
 _META_REMARK = re.compile(
-    r"\s*\([^()]*(?:yer almıyor|yer almamakta|detaylandırılmamış|belirtilmemiş|belirtilmiyor|haberde yok)[^()]*\)"
+    r"\s*\([^()]*(?:yer almıyor|yer almamakta|detaylandırılmamış|belirtilmemiş|belirtilmiyor|haberde yok|başlık)[^()]*\)"
+)
+# Clauses pointing at the source instead of saying something: "; ceza KAP
+# bildiriminde yer alıyor", "; tarih henüz belirtilmedi" (2026-10-14).
+_META_CLAUSE = re.compile(
+    r"[;,]\s*[^;,.]*?(?:KAP bildiriminde (?:yer alıyor|yer almaktadır|bulunuyor)|henüz belirtilmedi|belirtilmedi)(?=[.;]|$)"
 )
 
 # One label per kind of event, so that merge_same_label can put e.g. a bond
@@ -83,6 +88,8 @@ def clean_prose(text: str) -> str:
     text = text.replace("\u202f", " ").replace("\u00a0", " ")
     text = _ISIN.sub("", text)
     text = _META_REMARK.sub("", text)
+    text = _META_CLAUSE.sub("", text)
+    text = re.sub(r"(\d) ?mrn\b", r"\1 mlr", text)  # "4 mrn USD"
     return _META_SENTENCE.sub("", text).strip()
 
 

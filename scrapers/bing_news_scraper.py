@@ -137,7 +137,7 @@ class BingNewsScraper(BaseScraper):
         found = 0
         for item in targets:
             try:
-                response = await self._get(feed_url(f'"{item.title}"', self.source_config, newest_first=False))
+                response = await self._get(feed_url(item.title, self.source_config, newest_first=False))
             except Exception as exc:
                 logger.info("Bing başlık araması başarısız (%s): %s", item.title, exc)
                 continue
@@ -145,7 +145,9 @@ class BingNewsScraper(BaseScraper):
             best = max(
                 entries, key=lambda e: fuzz.token_set_ratio(e.get("title", ""), item.title), default=None
             )
-            if best is None or fuzz.token_set_ratio(best.get("title", ""), item.title) < TITLE_MATCH_SIMILARITY:
+            score = fuzz.token_set_ratio(best.get("title", ""), item.title) if best is not None else 0
+            if score < TITLE_MATCH_SIMILARITY:
+                logger.info("Bing'de eşleşme yok (%d sonuç, en iyi %d): %s", len(entries), score, item.title)
                 continue
             url = real_article_url(best.get("link"))
             body = description_text(best)
