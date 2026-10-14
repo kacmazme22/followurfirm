@@ -27,10 +27,11 @@ The first time a page is read everything on it is only recorded, not
 reported; a page that suddenly shows many "new" links (a site redesign) is
 re-recorded the same way instead of flooding the mail.
 
-Seen from a GitHub runner on 2026-10-14: Akbank and YEO list documents in
-plain HTML; Koç Holding's list is built by JavaScript and gubretas.com.tr
-fails certificate verification, so for those two the pages yield nothing
-(logged) and KAP remains the source.
+Seen from a GitHub runner on 2026-10-14: Akbank lists documents in plain
+HTML; YEO has no IR landing page, its menu links the listings
+("Sunumlar ve Raporlar") directly; Koç Holding's list is built by
+JavaScript (nothing to read, KAP remains the source); gubretas.com.tr
+serves an incomplete certificate chain (see _html_incomplete_chain).
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ import unicodedata
 from datetime import date, timedelta
 from urllib.parse import unquote, urljoin, urlparse
 
+import httpx
 from bs4 import BeautifulSoup
 
 from config.constants import SourceType
@@ -91,8 +93,14 @@ def name_tokens(ticker: TickerConfig) -> list[str]:
     return tokens + [ticker.symbol.lower()]
 
 
+def site(url: str) -> str:
+    """Host without "www.": www.yeo.com.tr redirects to yeo.com.tr, and the
+    two must count as the same site."""
+    return urlparse(url).netloc.lower().removeprefix("www.")
+
+
 def is_company_site(url: str, ticker: TickerConfig) -> bool:
-    host = urlparse(url).netloc.lower().removeprefix("www.")
+    host = site(url)
     return any(token in host for token in name_tokens(ticker))
 
 
@@ -116,13 +124,13 @@ def document_links(html: str, page_url: str) -> dict[str, str]:
 
 def listing_pages(html: str, page_url: str) -> list[str]:
     """Same-site links from an IR home page to its document listings."""
-    host = urlparse(page_url).netloc
+    host = site(page_url)
     soup = BeautifulSoup(html, "html.parser")
     pages: list[str] = []
     for anchor in soup.find_all("a", href=True):
         href = urljoin(page_url, anchor["href"].strip()).split("#")[0]
         label = " ".join(anchor.get_text(" ").split())
-        if urlparse(href).netloc != host or _DOCUMENT_LINK.search(href) or _ENGLISH_PATH.search(href):
+        if site(href) != host or _DOCUMENT_LINK.search(href) or _ENGLISH_PATH.search(href):
             continue
         if _LISTING_WORDS.search(f"{label} {unquote(urlparse(href).path)}") and href not in pages and href != page_url:
             pages.append(href)
@@ -170,7 +178,7 @@ def ir_link_on_site(html: str, page_url: str, ticker: TickerConfig) -> str | Non
         href = urljoin(page_url, anchor["href"].strip()).split("#")[0]
         if not href.startswith("http") or _ENGLISH_PATH.search(href):
             continue
-        if urlparse(href).netloc != urlparse(page_url).netloc and not is_company_site(href, ticker):
+        if site(href) != site(page_url) and not is_company_site(href, ticker):
             continue
         label = " ".join(anchor.get_text(" ").split())
         if _IR_LABEL.search(label):
@@ -219,9 +227,10 @@ class IrPageScraper(BaseScraper):
         pages = self.pinned_pages or await self._watched_pages()
         items: list[RawScrapedItem] = []
         for page_url in pages:
-            html = await self._html(page_url)
-            if html is not None:
-                items += self._new_documents(page_url, document_links(html, page_url))
+            page = await self._html(page_url)
+            if page is not None:
+                html, final_url = page
+                items += self._new_documents(page_url, document_links(html, final_url))
         return items
 
     # --- discovery -------------------------------------------------------
@@ -243,19 +252,21 @@ class IrPageScraper(BaseScraper):
         if home is None:
             logger.info("%s: yatırımcı ilişkileri sayfası bulunamadı", self.ticker.symbol)
             return []
-        html = await self._html(home)
-        if html is None:
+        page = await self._html(home)
+        if page is None:
             return []
-        pages = [home] + listing_pages(html, home)
+        html, final_url = page
+        pages = [home] + [p for p in listing_pages(html, final_url) if p != home]
         logger.info("%s: IR sayfaları bulundu: %s", self.ticker.symbol, ", ".join(pages))
         return pages
 
     async def _find_ir_home(self) -> str | None:
         website = await self._website_from_kap()
         if website:
-            html = await self._html(website)
-            if html is not None:
-                ir_link = ir_link_on_site(html, website, self.ticker) or await self._common_ir_path(website)
+            page = await self._html(website)
+            if page is not None:
+                html, final_url = page
+                ir_link = ir_link_on_site(html, final_url, self.ticker) or await self._common_ir_path(final_url)
                 logger.info("%s: KAP'taki web sitesi %s, IR bağlantısı: %s", self.ticker.symbol, website, ir_link)
                 return ir_link or website
         return None
@@ -290,7 +301,7 @@ class IrPageScraper(BaseScraper):
                 response = await self._get(url)
             except Exception:
                 continue
-            if response.status_code == 200 and urlparse(str(response.url)).netloc == urlparse(website).netloc:
+            if response.status_code == 200 and site(str(response.url)) == site(website):
                 return str(response.url)
         return None
 
@@ -305,14 +316,39 @@ class IrPageScraper(BaseScraper):
             return [f"{host}{path}" for path in kap_company_paths(response.text, self.ticker.symbol)]
         return []
 
-    async def _html(self, url: str) -> str | None:
+    async def _html(self, url: str) -> tuple[str, str] | None:
+        """(page HTML, final URL after redirects), or None."""
         try:
             response = await self._get(url)
             response.raise_for_status()
+        except httpx.ConnectError as exc:
+            if "CERTIFICATE_VERIFY_FAILED" not in str(exc):
+                logger.info("%s: IR sayfası okunamadı (%s): %s", self.ticker.symbol, url, exc)
+                return None
+            return await self._html_incomplete_chain(url)
         except Exception as exc:
             logger.info("%s: IR sayfası okunamadı (%s): %s: %s", self.ticker.symbol, url, type(exc).__name__, exc)
             return None
-        return response.text
+        return response.text, str(response.url)
+
+    async def _html_incomplete_chain(self, url: str) -> tuple[str, str] | None:
+        """gubretas.com.tr opens in a browser but failed here with "unable to
+        get local issuer certificate" (2026-10-14): the server doesn't send
+        its intermediate certificate; browsers fetch it themselves, Python
+        doesn't. These pages are public document lists that are only read
+        (nothing is sent to them), so they're read without verification —
+        only on this error and only here — and it is logged."""
+        logger.warning("%s: %s sertifika zinciri eksik, doğrulamasız okunuyor", self.ticker.symbol, url)
+        try:
+            async with httpx.AsyncClient(
+                verify=False, follow_redirects=True, timeout=20, headers={"User-Agent": self.politeness.user_agent}
+            ) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+        except Exception as exc:
+            logger.info("%s: IR sayfası okunamadı (%s): %s: %s", self.ticker.symbol, url, type(exc).__name__, exc)
+            return None
+        return response.text, str(response.url)
 
     # --- new documents ---------------------------------------------------
 

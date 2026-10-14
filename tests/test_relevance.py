@@ -485,3 +485,10 @@ def test_fallback_model_number_styles():
     assert turkish_numbers("%1,08 düşüşle 12 118,29 puanda") == "%1,08 düşüşle 12.118,29 puanda"
     assert turkish_numbers("8 430 000 000 TL’den 9 132 064 896,755 TL’ye") == "8,43 mlr TL’den 9,13 mlr TL’ye"
     assert turkish_numbers("15 Ekim 2026 100 baz puan") == "15 Ekim 2026 100 baz puan"
+
+
+def test_listing_pages_across_www_redirect():
+    from scrapers.ir_scraper import listing_pages
+
+    menu = '<a href="https://yeo.com.tr/sunumlar-ve-raporlar/">Sunumlar ve Raporlar</a><a href="https://yeo.com.tr/hakkimizda/">Hakkımızda</a>'
+    assert listing_pages(menu, "https://www.yeo.com.tr/") == ["https://yeo.com.tr/sunumlar-ve-raporlar/"]
