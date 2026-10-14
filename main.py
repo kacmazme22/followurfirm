@@ -21,6 +21,7 @@ from config.constants import SourceType
 from config.settings import AppConfig, PolitenessConfig, TickerConfig, get_settings
 from nlp.categorizer import categorize_batch
 from nlp.dedup import deduplicate
+from nlp.relevance import tr_lower
 from nlp.market_brief import build_market_brief
 from nlp.providers.factory import get_provider
 from nlp.providers.noop_provider import NoopProvider
@@ -88,6 +89,22 @@ async def fetch_kap_once_and_group(
     return {}
 
 
+def _drop_mirrored_filings(raw_items: list[RawScrapedItem], symbol: str) -> list[RawScrapedItem]:
+    """Bigpara's kap-haberleri page is a copy of a KAP filing ("AKBNK AKBANK
+    T.A.Ş. (Özel Durum Açıklaması (Genel))"). When KAP's own detail page was
+    read, the copy only adds a duplicate item and eats the LLM's text budget."""
+    kap_subjects = {tr_lower(i.raw_title) for i in raw_items if i.source == SourceType.KAP and i.raw_body_snippet}
+    if not kap_subjects:
+        return raw_items
+    kept = [
+        i for i in raw_items
+        if not (i.raw_url and "/kap-haberleri/" in i.raw_url and any(s in tr_lower(i.raw_title) for s in kap_subjects))
+    ]
+    if len(kept) < len(raw_items):
+        logger.info("%s: KAP'tan okunan %d bildirimin Bigpara kopyası elendi", symbol, len(raw_items) - len(kept))
+    return kept
+
+
 async def _build_company_report(
     ticker: TickerConfig,
     kap_raw_by_ticker: dict[str, list[RawScrapedItem]],
@@ -116,6 +133,7 @@ async def _build_company_report(
     if google_result.error:
         digest_run.add_error(SourceType.GOOGLE_NEWS, ticker.symbol, google_result.error)
 
+    raw_items = _drop_mirrored_filings(raw_items, ticker.symbol)
     news_items = categorize_batch(raw_items)  # boilerplate items already dropped (None -> skipped)
     news_items = deduplicate(news_items)
 

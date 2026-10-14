@@ -71,7 +71,9 @@ class BingNewsConfig(BaseModel):
     article links resolve, so the LLM gets text instead of bare headlines."""
 
     enabled: bool = True
-    query_template: str = '{ticker} OR "{company_name}"'
+    # `AKBNK OR "Akbank"` returned 0 items for every ticker (2026-10-14 dry
+    # run) while plain market queries worked; the plain company name does.
+    query_template: str = "{company_name}"
     language: str = "tr-TR"
     country: str = "TR"
 

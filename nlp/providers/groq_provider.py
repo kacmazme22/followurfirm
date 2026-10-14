@@ -57,7 +57,7 @@ import groq
 from groq import AsyncGroq
 from pydantic import ValidationError
 
-from config.constants import NewsCategory
+from config.constants import NewsCategory, SourceType
 from config.settings import AppConfig
 from nlp.providers.base import SummarizerProvider
 from scrapers.models import CompanyReport, NewsItem, SynthesizedCompanyReport, SynthesizedSection
@@ -69,13 +69,18 @@ logger = logging.getLogger(__name__)
 # budget plus a ~3.4k-token prompt was rejected outright (413, "Requested
 # 9435", 2026-10-05). Answers are now a few short bullets, so a much smaller
 # budget leaves room for the article text that actually matters.
-DEFAULT_MAX_TOKENS = 2500
+DEFAULT_MAX_TOKENS = 3000
 MARKET_MAX_TOKENS = 1500
 
 # Article text sent per call, shared across the items that have a body, so
 # a busy day trims each body instead of tipping the request over the limit.
-BODY_BUDGET_CHARS = 9000
-MAX_BODY_CHARS_PER_ITEM = 1500
+BODY_BUDGET_CHARS = 8000
+MAX_BODY_CHARS_PER_ITEM = 1800
+
+# gpt-oss spends output tokens on hidden reasoning before the JSON; at the
+# default effort a 19-item Akbank call ran out of max_tokens mid-answer
+# (finish_reason='length', 2026-10-14). "low" keeps the reasoning short.
+REASONING_EFFORT = "low"
 MAX_ATTEMPTS = 2  # 1 initial try + 1 retry
 
 # On a 413 "request too large" guard failure, the retry uses
@@ -126,9 +131,18 @@ def _today_line() -> str:
     return f"Bugünün tarihi: {datetime.now(ZoneInfo('Europe/Istanbul')).strftime('%d.%m.%Y')}"
 
 
-def _body_cap(items: list[NewsItem]) -> int:
-    with_body = sum(1 for item in items if item.body_snippet) or 1
-    return min(MAX_BODY_CHARS_PER_ITEM, BODY_BUDGET_CHARS // with_body)
+def _is_filing(item: NewsItem) -> bool:
+    return item.source == SourceType.KAP or "/kap-haberleri/" in str(item.url or "")
+
+
+def _body_cap(items: list[NewsItem], item: NewsItem | None = None) -> int:
+    """Share of BODY_BUDGET_CHARS for one item. KAP filings (structured
+    forms with the amounts) weigh double: with 19 Akbank items an even split
+    left ~470 characters each and cut the forms off (2026-10-14 dry run)."""
+    weights = [(2 if _is_filing(i) else 1) for i in items if i.body_snippet]
+    total = sum(weights) or 1
+    weight = 2 if item is not None and _is_filing(item) else 1
+    return min(MAX_BODY_CHARS_PER_ITEM, BODY_BUDGET_CHARS * weight // total)
 
 
 def _item_urls(item: NewsItem) -> list[str]:
@@ -224,7 +238,7 @@ KURALLAR:
 {"sections": [{"subheading": "...", "narrative": "...", "source_ids": [1]}]}"""
 
 
-HEADLINE_MAX_TOKENS = 600
+HEADLINE_MAX_TOKENS = 1500
 HEADLINE_MAX_CHARS = 90
 HEADLINE_SYSTEM_PROMPT = """Bir yatırımcı bülteninin e-posta konusunu yazıyorsun. Sana bugünkü bültenin maddeleri verilecek. Okuyucu için en çarpıcı ve önemli TEK gelişmeyi seç (şirket haberleri genelde piyasa gündeminden önce gelir; büyük tutar, ceza, sözleşme, temettü, bilanço gibi olaylar öne çıkar) ve en fazla 70 karakterlik Türkçe bir başlık yaz. Rakam varsa koru, şirket adını/kodunu yaz. Maddelerde olmayan hiçbir bilgiyi ekleme. Sadece JSON ver: {"baslik": "..."}"""
 
@@ -242,6 +256,7 @@ class GroqProvider(SummarizerProvider):
         self._client = AsyncGroq(api_key=settings.env.groq_api_key)
         self._model = settings.env.groq_model
         self._max_tokens = max_tokens
+        self._reasoning_effort: str | None = REASONING_EFFORT
 
     async def summarize_company_report(self, report: CompanyReport) -> SynthesizedCompanyReport:
         categories = report.ordered_categories()
@@ -262,6 +277,21 @@ class GroqProvider(SummarizerProvider):
             sections_by_category=sections_by_category,
         )
 
+    async def _create(self, **kwargs):
+        """chat.completions.create with low reasoning effort; if the API
+        rejects the parameter (older model/SDK), it's dropped for the rest
+        of the run and the call is repeated without it."""
+        effort = getattr(self, "_reasoning_effort", REASONING_EFFORT)
+        if effort:
+            try:
+                return await self._client.chat.completions.create(model=self._model, reasoning_effort=effort, **kwargs)
+            except (groq.BadRequestError, TypeError) as exc:
+                if "reasoning" not in str(exc).lower():
+                    raise
+                logger.warning("reasoning_effort desteklenmiyor, parametresiz devam: %s", exc)
+                self._reasoning_effort = None
+        return await self._client.chat.completions.create(model=self._model, **kwargs)
+
     async def pick_headline(self, candidates: list[str]) -> str | None:
         """The user wanted the subject to open with the day's most striking
         news instead of a fixed "FollowUrFirm Günlük Bülten — date". Any
@@ -270,8 +300,7 @@ class GroqProvider(SummarizerProvider):
             return None
         prompt = "\n".join([_today_line(), "Bugünkü bültenin maddeleri:", *[f"- {c}" for c in candidates]])
         try:
-            completion = await self._client.chat.completions.create(
-                model=self._model,
+            completion = await self._create(
                 max_tokens=HEADLINE_MAX_TOKENS,
                 response_format={"type": "json_object"},
                 messages=[{"role": "system", "content": HEADLINE_SYSTEM_PROMPT}, {"role": "user", "content": prompt}],
@@ -368,8 +397,7 @@ class GroqProvider(SummarizerProvider):
         prompt asks for a "category" field per section, the per-category
         prompt doesn't and its caller ignores it."""
         try:
-            completion = await self._client.chat.completions.create(
-                model=self._model,
+            completion = await self._create(
                 max_tokens=max_tokens if max_tokens is not None else self._max_tokens,
                 response_format={"type": "json_object"},
                 messages=[
@@ -447,12 +475,11 @@ class GroqProvider(SummarizerProvider):
             "Ham haberler:",
         ]
         sources = [item for _, items in categories for item in items]
-        body_cap = _body_cap(sources)
         hints = [category.value for category, items in categories for _ in items]
         for i, (item, hint) in enumerate(zip(sources, hints), start=1):
             lines.append(f"{i}. [ön-kategori: {hint}] Başlık: {item.title}")
             lines.append(
-                f"   Metin: {item.body_snippet[:body_cap]}" if item.body_snippet else "   (metin yok, yalnızca başlık)"
+                f"   Metin: {item.body_snippet[:_body_cap(sources, item)]}" if item.body_snippet else "   (metin yok, yalnızca başlık)"
             )
             lines.append("")
         return "\n".join(lines), sources
@@ -460,11 +487,10 @@ class GroqProvider(SummarizerProvider):
     @staticmethod
     def _build_user_prompt(ticker: str, category: NewsCategory, items: list[NewsItem]) -> str:
         lines = [_today_line(), f"Ticker: {ticker}", f"Kategori: {category.display_name_tr}", "", "Ham haberler:"]
-        body_cap = _body_cap(items)
         for i, item in enumerate(items, start=1):
             lines.append(f"{i}. Başlık: {item.title}")
             lines.append(
-                f"   Metin: {item.body_snippet[:body_cap]}" if item.body_snippet else "   (metin yok, yalnızca başlık)"
+                f"   Metin: {item.body_snippet[:_body_cap(items, item)]}" if item.body_snippet else "   (metin yok, yalnızca başlık)"
             )
             lines.append("")
         return "\n".join(lines)

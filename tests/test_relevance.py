@@ -250,3 +250,26 @@ def test_numbers_and_labels_are_cleaned_up():
     ])
     assert [s.subheading for s in merged] == ["Borçlanma", "Dava"]
     assert merged[0].narrative == "A\n\nC" and len(merged[0].source_urls) == 2
+
+
+def test_kap_xbrl_rows_use_the_human_label():
+    from utils.article_fetcher import extract_form_lines
+
+    html = """<table>
+      <tr><td>oda_UpdateAnnouncementFlag|</td><td>Yapılan Açıklama Güncelleme mi?</td><td>Evet (Yes)</td></tr>
+      <tr><td>oda_ExplanationTextBlock|</td><td>Açıklamalar</td><td>Rekabet Kurulu soruşturması uzlaşmayla sonuçlanmıştır.</td></tr>
+      <tr><td>[Türkçe]</td></tr><tr><td>Türkçe</td></tr>
+    </table>"""
+    assert extract_form_lines(html) == ["Açıklamalar: Rekabet Kurulu soruşturması uzlaşmayla sonuçlanmıştır."]
+
+
+def test_bigpara_copy_of_a_read_kap_filing_is_dropped():
+    from main import _drop_mirrored_filings
+    from scrapers.models import RawScrapedItem
+    from config.constants import SourceType
+
+    kap = RawScrapedItem(source=SourceType.KAP, ticker="AKBNK", raw_title="Özel Durum Açıklaması (Genel)", raw_body_snippet="Açıklamalar: ...")
+    mirror = RawScrapedItem(source=SourceType.BIGPARA, ticker="AKBNK", raw_title="AKBNK AKBANK T.A.Ş. (Özel Durum Açıklaması (Genel))",
+                            raw_url="https://www.bigpara.com/haberler/kap-haberleri/akbnk-x_ID1/")
+    news = RawScrapedItem(source=SourceType.BIGPARA, ticker="AKBNK", raw_title="Akbank'a yeni kredi", raw_url="https://www.bigpara.com/haberler/x")
+    assert _drop_mirrored_filings([kap, mirror, news], "AKBNK") == [kap, news]

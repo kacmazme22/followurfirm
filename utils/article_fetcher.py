@@ -91,6 +91,8 @@ _FORM_NOISE_LABELS = (
     "güncelleme mi", "düzeltme mi", "ertelenmiş", "daha önce yapılan açıklamanın tarihi",
     "ilgili şirketler", "ilgili fonlar", "hak sahiplerinin belirlendiği", "derecelendirme notunu veren",
 )
+_XBRL_CELL = re.compile(r"^[a-z]+_[A-Za-z0-9]+\|")
+_LANGUAGE_HEADERS = {"türkçe", "ingilizce", "english", "turkish"}
 _EMPTY_VALUES = {"", "-", "[]", "yok", "hayır (no)", "hayır"}
 
 
@@ -112,7 +114,11 @@ def extract_form_lines(html: str) -> list[str]:
     lines: list[str] = []
     for row in soup.find_all("tr"):
         cells = [" ".join(c.get_text(" ").split()) for c in row.find_all(["td", "th"], recursive=False)]
-        cells = [c for c in cells if c]
+        # kap.org.tr prefixes each row with its XBRL element name
+        # ("oda_UpdateAnnouncementFlag|"); the human label is the next cell.
+        cells = [c for c in cells if c and not _XBRL_CELL.match(c)]
+        if len(cells) == 1 and cells[0].strip("[]").lower() in _LANGUAGE_HEADERS:
+            continue
         if len(cells) == 1 and len(cells[0]) <= 80:
             # Section header row ("İlgili İhraç Tavanı Bilgileri"): keeps the
             # programme ceiling apart from the amount actually sold.
@@ -130,6 +136,8 @@ def extract_form_lines(html: str) -> list[str]:
         line = f"{label}: {' | '.join(values)}"
         if line not in lines:
             lines.append(line)
+    while lines and lines[-1].startswith("["):  # trailing headers with no fields
+        lines.pop()
     return lines
 
 
@@ -150,8 +158,6 @@ def structured_text(html: str, url: str) -> str | None:
         logger.info("trafilatura extraction failed for %s: %s", url, exc)
         extracted = ""
     form = extract_form_lines(html)
-    if form and form[-1].startswith("["):
-        form.pop()
     if sum(1 for line in form if not line.startswith("[")) >= 3:
         logger.info("Form yapısı: %s -> %d satır", url, len(form))
         parts = form + [f"Açıklama: {p}" for p in _longest_paragraphs(extracted)]
