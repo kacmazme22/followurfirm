@@ -399,3 +399,34 @@ def test_ir_discovery_helpers():
     assert listing_pages(home, "https://www.akbankinvestorrelations.com/tr") == [
         "https://www.akbankinvestorrelations.com/tr/yayinlar/sunumlar/Kurumsal-sunum/314/0/0"
     ]
+
+
+def test_ir_home_from_kap_company_page():
+    from config.settings import TickerConfig
+    from scrapers.ir_scraper import company_website, ir_link_on_site
+
+    akbank = TickerConfig(symbol="AKBNK", name="Akbank")
+    kap_page = '<script>{"web":"https://www.kap.org.tr/tr/x","internetAdresi":"http://www.akbank.com"}</script>'
+    assert company_website(kap_page, akbank) == "http://www.akbank.com/"
+    site = """<a href="/tr/bireysel">Bireysel</a>
+    <a href="https://www.akbankinvestorrelations.com/tr">Yatırımcı İlişkileri</a>"""
+    assert ir_link_on_site(site, "https://www.akbank.com/", akbank) == "https://www.akbankinvestorrelations.com/tr"
+    koc = TickerConfig(symbol="KCHOL", name="Koç Holding")
+    assert ir_link_on_site('<a href="/yatirimci-iliskileri">Yatırımcı İlişkileri</a>', "https://www.koc.com.tr/", koc) == \
+        "https://www.koc.com.tr/yatirimci-iliskileri"
+    assert ir_link_on_site('<a href="https://investing.com/x">Investor</a>', "https://www.koc.com.tr/", koc) is None
+
+
+def test_fine_paragraph_moved_out_of_borrowing():
+    from scrapers.models import SynthesizedSection
+    from utils.formatting import refile_paragraphs
+
+    sections = refile_paragraphs([SynthesizedSection(
+        subheading="Borçlanma",
+        narrative="Rekabet Kurulu soruşturmasında 1,71 mlr TL idari para cezası ödendi.\n\nSPK TL borçlanma aracı ihraç yetkisi verdi.",
+        source_urls=[],
+    )])
+    assert [(s.subheading, s.narrative) for s in sections] == [
+        ("Dava", "Rekabet Kurulu soruşturmasında 1,71 mlr TL idari para cezası ödendi."),
+        ("Borçlanma", "SPK TL borçlanma aracı ihraç yetkisi verdi."),
+    ]

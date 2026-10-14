@@ -72,6 +72,9 @@ LOOKBACK_DAYS = 2
 # whose whole content is "Yatırımcı sunumumuz ekte sunulmuştur", or one about
 # a presentation/report/results whatever its text.
 _ATTACHMENT_LINK = re.compile(r"/tr/api/file/download/[a-f0-9]{32}")
+# Link from a filing to the company's KAP page, which lists its website
+# (used to find the investor-relations site, scrapers/ir_scraper.py).
+_COMPANY_PAGE = re.compile(r"/tr/sirket-bilgileri/(?:ozet|genel)/[\w-]+")
 _ATTACHMENT_SUBJECT = re.compile(r"sunum|rapor|sonuç|faaliyet|analist|yatırımcı", re.IGNORECASE)
 MIN_TEXT_WITHOUT_ATTACHMENT = 300
 MAX_ATTACHMENT_BYTES = 15_000_000
@@ -135,6 +138,9 @@ class KapScraper(BaseScraper):
                 except Exception as exc:
                     logger.info("KAP detay alınamadı (%s): %s: %s", url, type(exc).__name__, exc)
                     continue
+                company_page = _COMPANY_PAGE.search(response.text)
+                if company_page:
+                    item.extra["kap_company_url"] = f"{host}{company_page.group(0)}"
                 text = structured_text(response.text, url)
                 if _needs_attachment(item, text):
                     attachment = await self._attachment_text(host, response.text)

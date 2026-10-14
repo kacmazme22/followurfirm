@@ -167,6 +167,44 @@ def fix_year_ranges(text: str, source_text: str) -> str:
     return _YEAR_RANGE.sub(replace, text)
 
 
+# A paragraph whose subject is plainly another label's: on 2026-10-14 the
+# Rekabet Kurulu fine was written as the first paragraph of "Borçlanma".
+_PARAGRAPH_KIND = (
+    ("Dava", re.compile(r"rekabet kurulu|idari para cezası|soruşturma|dava")),
+    ("Borçlanma", re.compile(r"tahvil|bono|borçlanma aracı|ihraç tavanı|ihraç belgesi|sukuk|eurobond")),
+)
+
+
+def _paragraph_kind(paragraph: str) -> str | None:
+    kinds = [label for label, pattern in _PARAGRAPH_KIND if pattern.search(paragraph.lower())]
+    return kinds[0] if len(kinds) == 1 else None
+
+
+def refile_paragraphs(sections: list[SynthesizedSection]) -> list[SynthesizedSection]:
+    """Moves paragraphs of a "Dava"/"Borçlanma" section that are clearly about
+    the other one into a section of that label (created if missing)."""
+    by_label = {s.subheading: s for s in sections}
+    for section in list(sections):
+        if section.subheading not in ("Dava", "Borçlanma"):
+            continue
+        paragraphs = section.narrative.split(PARAGRAPH_SEPARATOR)
+        stay, move = [], []
+        for paragraph in paragraphs:
+            kind = _paragraph_kind(paragraph)
+            (move if kind and kind != section.subheading else stay).append(paragraph)
+        if not move or not stay:
+            continue
+        section.narrative = PARAGRAPH_SEPARATOR.join(stay)
+        other = "Dava" if section.subheading == "Borçlanma" else "Borçlanma"
+        if other in by_label:
+            by_label[other].narrative += PARAGRAPH_SEPARATOR + PARAGRAPH_SEPARATOR.join(move)
+        else:
+            new = SynthesizedSection(subheading=other, narrative=PARAGRAPH_SEPARATOR.join(move), source_urls=[])
+            sections.insert(sections.index(section), new)
+            by_label[other] = new
+    return sections
+
+
 def polish_report(report: SynthesizedCompanyReport, source_text: str | None = None) -> SynthesizedCompanyReport:
     """Same label across categories (e.g. "Dava" filed under two buckets)
     is merged into the first category it appears in."""
@@ -174,7 +212,7 @@ def polish_report(report: SynthesizedCompanyReport, source_text: str | None = No
     new_sections: dict = {}
     for category, sections in report.ordered_sections():
         kept = []
-        for section in polish_sections(sections):
+        for section in refile_paragraphs(polish_sections(sections)):
             key = _label_key(section.subheading)
             if key in seen:
                 first = seen[key]

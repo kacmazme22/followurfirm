@@ -138,8 +138,13 @@ async def _build_company_report(
 
     ir_pages = settings.yaml.sources.company_ir_pages
     if ir_pages.enabled:
+        kap_company_url = next(
+            (i.extra["kap_company_url"] for i in kap_raw_by_ticker.get(ticker.symbol, []) if i.extra.get("kap_company_url")),
+            None,
+        )
         ir_result = await IrPageScraper(
-            ticker, memory, _GOOGLE_NEWS_POLITENESS, pinned_pages=ir_pages.urls.get(ticker.symbol)
+            ticker, memory, _GOOGLE_NEWS_POLITENESS,
+            pinned_pages=ir_pages.urls.get(ticker.symbol), kap_company_url=kap_company_url,
         ).run()
         raw_items += ir_result.items
         if ir_result.error:
