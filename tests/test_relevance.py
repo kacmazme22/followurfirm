@@ -273,3 +273,20 @@ def test_bigpara_copy_of_a_read_kap_filing_is_dropped():
                             raw_url="https://www.bigpara.com/haberler/kap-haberleri/akbnk-x_ID1/")
     news = RawScrapedItem(source=SourceType.BIGPARA, ticker="AKBNK", raw_title="Akbank'a yeni kredi", raw_url="https://www.bigpara.com/haberler/x")
     assert _drop_mirrored_filings([kap, mirror, news], "AKBNK") == [kap, news]
+
+
+def test_kap_text_block_without_other_fields():
+    """Özel Durum filing: only flags and the explanation block; the block
+    must reach the model, not KAP's search help text or XBRL ids."""
+    from utils.article_fetcher import structured_text
+
+    html = """<html><body><div class="search-help">() Aşağıdaki öneriler, sadece endeks/pazar/dönem bilgisi girildiğinde listelenmektedir.</div>
+    <table>
+    <tr><td>oda_DelayedAnnouncementFlag|</td><td>Yapılan Açıklama Ertelenmiş Bir Açıklama mı?</td><td>Hayır (No)</td></tr>
+    <tr><td>oda_ExplanationSection|</td><td>Açıklamalar<div class="content-en">Explanations</div></td></tr>
+    </table>
+    <div><span>oda_ExplanationTextBlock|</span><div><p>Rekabet Kurulu soruşturması 1.713.897.558 TL idari para cezası ile uzlaşmayla sonuçlanmıştır.</p>
+    <div class="content-en"><p>The investigation was settled.</p></div></div></div>
+    </body></html>"""
+    text = structured_text(html, "https://www.kap.org.tr/tr/Bildirim/1")
+    assert text == "Açıklama: Rekabet Kurulu soruşturması 1,71 mlr TL idari para cezası ile uzlaşmayla sonuçlanmıştır."

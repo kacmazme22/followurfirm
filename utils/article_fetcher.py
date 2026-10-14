@@ -30,6 +30,7 @@ import trafilatura
 from bs4 import BeautifulSoup
 
 from scrapers.base import BaseScraper
+from utils.formatting import turkish_numbers
 
 logger = logging.getLogger(__name__)
 
@@ -72,9 +73,19 @@ _CHROME_MARKERS = (
 _DISCLAIMER_START = re.compile(r"burada yer alan yatırım bilgi|yatırım danışmanlığı kapsamında değildir", re.IGNORECASE)
 
 
+# Bot-protection interstitials (Cloudflare and the like) come back as HTTP
+# 200; on 2026-10-14 one reached the model as a GUBRF dividend "article".
+_CHALLENGE_MARKERS = (
+    "checking your browser", "enable javascript", "supports javascript", "just a moment",
+    "verify you are human", "attention required",
+)
+
+
 def clean_article_text(text: str) -> str | None:
     """Drops site-chrome lines and the trailing legal disclaimer; None if
     nothing article-like is left."""
+    if any(marker in text[:600].lower() for marker in _CHALLENGE_MARKERS):
+        return None
     match = _DISCLAIMER_START.search(text)
     if match:
         text = text[: match.start()]
@@ -96,6 +107,52 @@ _LANGUAGE_HEADERS = {"türkçe", "ingilizce", "english", "turkish"}
 _EMPTY_VALUES = {"", "-", "[]", "yok", "hayır (no)", "hayır"}
 
 
+def _turkish_soup(html: str) -> BeautifulSoup:
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    for tag in soup.select('[class*="content-en"]'):
+        tag.decompose()
+    return soup
+
+
+_TEXT_BLOCK_ID = re.compile(r"^[a-z]+_\w*TextBlock\|")
+
+
+def extract_text_blocks(html: str) -> list[str]:
+    """The free-text parts of a KAP form ("oda_ExplanationTextBlock|" and the
+    like), read element by element up to the next XBRL id. Özel Durum
+    filings are almost nothing but this block — on 2026-10-14 the Akbank
+    Rekabet fine filing had no other form field, fell through to plain page
+    extraction and reached the model as KAP's search-box help text followed
+    by "oda_..." ids and every label in two languages."""
+    lines = [" ".join(t.split()) for t in _turkish_soup(html).get_text("\n").splitlines()]
+    lines = [t for t in lines if t]
+    blocks: list[str] = []
+    current: list[str] | None = None
+    for line in lines:
+        if _XBRL_CELL.match(line):
+            if current:
+                blocks.append(" ".join(current))
+            current = [] if _TEXT_BLOCK_ID.match(line) else None
+            rest = line.split("|", 1)[1].strip()
+            if current is not None and rest:
+                current.append(rest)
+            continue
+        if current is None:
+            continue
+        if not current and len(line) <= 40 and not re.search(r"[\d.]", line):
+            continue  # the block's own label ("Açıklamalar")
+        current.append(line)
+    if current:
+        blocks.append(" ".join(current))
+    unique: list[str] = []
+    for block in blocks:
+        if len(block) >= 20 and block not in unique:
+            unique.append(block)
+    return unique
+
+
 def extract_form_lines(html: str) -> list[str]:
     """KAP disclosures (on kap.org.tr and on Bigpara's kap-haberleri copies)
     are label/value forms. Flattened to plain text they read "Satışı
@@ -105,12 +162,7 @@ def extract_form_lines(html: str) -> list[str]:
     50 mn EUR under a 4 bn USD programme. Each table row becomes one
     "Etiket: Değer" line instead; English duplicates (KAP's content-en
     cells) and procedural form fields are dropped."""
-    soup = BeautifulSoup(html, "html.parser")
-    for tag in soup(["script", "style", "noscript"]):
-        tag.decompose()
-    for tag in soup.select('[class*="content-en"]'):
-        tag.decompose()
-
+    soup = _turkish_soup(html)
     lines: list[str] = []
     for row in soup.find_all("tr"):
         cells = [" ".join(c.get_text(" ").split()) for c in row.find_all(["td", "th"], recursive=False)]
@@ -158,9 +210,15 @@ def structured_text(html: str, url: str) -> str | None:
         logger.info("trafilatura extraction failed for %s: %s", url, exc)
         extracted = ""
     form = extract_form_lines(html)
-    if sum(1 for line in form if not line.startswith("[")) >= 3:
-        logger.info("Form yapısı: %s -> %d satır", url, len(form))
-        parts = form + [f"Açıklama: {p}" for p in _longest_paragraphs(extracted)]
+    blocks = extract_text_blocks(html)
+    if blocks or sum(1 for line in form if not line.startswith("[")) >= 3:
+        logger.info("Form yapısı: %s -> %d satır, %d açıklama", url, len(form), len(blocks))
+        explanations = blocks or _longest_paragraphs(extracted)
+        if all(line.startswith("[") for line in form):
+            form = []  # section headers with no fields under them
+        # Amounts are normalised here, before the model sees them: given
+        # "Tutar: 30.000.000.000" it wrote "30 mn TL" (2026-10-14).
+        parts = [turkish_numbers(line) for line in form] + [f"Açıklama: {turkish_numbers(p)}" for p in explanations]
         return "\n".join(parts)
     return clean_article_text(extracted) if extracted else None
 

@@ -36,14 +36,24 @@ def _abbreviate(value: int) -> str:
     return f"{value:,}".replace(",", ".")
 
 
+# "1.713,9 mn" / "1,713,9 mn": the model's own half-conversion of a 10-digit
+# amount (2026-10-14 subject line).
+_THOUSANDS_OF_MILLIONS = re.compile(r"(?<![\d.,])(\d{1,3})[.,](\d{3})(?:,(\d+))? ?(mn|milyon)\b")
+
+
 def turkish_numbers(text: str) -> str:
     """1.713.897.558 TL -> 1,71 mlr TL; 30,000,000,000 TRY -> 30 mlr TL;
-    05 Oct 2026 -> 5 Ekim 2026."""
+    1.713,9 mn TL -> 1,71 mlr TL; 05 Oct 2026 -> 5 Ekim 2026."""
     def replace(match: re.Match) -> str:
         value = int(re.sub(r"[.,]", "", match.group(1)))
         return _abbreviate(value) if value >= 1_000_000 else match.group(1)
 
+    def millions(match: re.Match) -> str:
+        value = float(f"{match.group(1)}{match.group(2)}.{match.group(3) or 0}") * 1_000_000
+        return _abbreviate(int(value))
+
     text = _GROUPED_NUMBER.sub(replace, text)
+    text = _THOUSANDS_OF_MILLIONS.sub(millions, text)
     text = re.sub(r"\bTRY\b", "TL", text)
     text = _EN_DATE.sub(lambda m: f"{int(m.group(1))} {_MONTHS_EN_TR[m.group(2)]} {m.group(3)}", text)
     return text
