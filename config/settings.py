@@ -66,6 +66,18 @@ class GoogleNewsRssConfig(BaseModel):
     country: str = "TR"
 
 
+class BingNewsConfig(BaseModel):
+    """Bing News RSS (scrapers/bing_news_scraper.py): the source whose
+    article links resolve, so the LLM gets text instead of bare headlines."""
+
+    enabled: bool = True
+    # `AKBNK OR "Akbank"` returned 0 items for every ticker (2026-10-14 dry
+    # run) while plain market queries worked; the plain company name does.
+    query_template: str = "{company_name}"
+    language: str = "tr-TR"
+    country: str = "TR"
+
+
 class MarketBriefConfig(BaseModel):
     """Headline-only Google News queries feeding the "Piyasa Gündemi" box
     (nlp/market_brief.py). when:1d keeps each feed to the last day."""
@@ -87,7 +99,7 @@ class MarketBriefConfig(BaseModel):
         "Fed faiz kararı when:1d",
         "Türkiye kredi notu when:1d",
     ])
-    max_headlines: int = 30
+    max_headlines: int = 24
 
 
 class CompanyIrPagesConfig(BaseModel):
@@ -110,6 +122,7 @@ class SourcesConfig(BaseModel):
     bigpara: BigparaSourceConfig
     google_news_rss: GoogleNewsRssConfig = Field(default_factory=GoogleNewsRssConfig)
     market_brief: MarketBriefConfig = Field(default_factory=MarketBriefConfig)
+    bing_news: BingNewsConfig = Field(default_factory=BingNewsConfig)
     company_ir_pages: CompanyIrPagesConfig = Field(default_factory=CompanyIrPagesConfig)
     web_search_fallback: WebSearchFallbackConfig = Field(default_factory=WebSearchFallbackConfig)
     sec_edgar: GenericPhase2SourceConfig = Field(default_factory=GenericPhase2SourceConfig)

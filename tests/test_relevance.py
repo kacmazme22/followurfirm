@@ -190,3 +190,121 @@ def test_daily_close_is_not_an_index_change():
 
 def test_circuit_breaker_is_noise():
     assert is_market_noise("YEOTK BORSA İSTANBUL BISTECH DEVRE KESİCİ UYGULAMASI (Pay Bazında Devre Kesici Bildirimi)")
+
+
+# --- KAP forms as "Etiket: Değer" lines (2026-10-06 bond mix-up) -------------
+
+_KAP_FORM_HTML = """
+<html><body>
+<table>
+ <tr><td>Yapılan Açıklama Güncelleme mi?</td><td>Evet (Yes)</td></tr>
+ <tr><td>İlgili Şirketler</td><td>[]</td></tr>
+ <tr><td colspan="2">İlgili İhraç Tavanı Bilgileri</td></tr>
+ <tr><td>Para Birimi</td><td>USD</td></tr>
+ <tr><td>Tutar</td><td>4.000.000.000</td></tr>
+ <tr><td colspan="2">İhraç Edilecek Sermaye Piyasası Aracı Bilgileri</td></tr>
+ <tr><td>Satışı Gerçekleştirilen Nominal Tutar</td><td>50.000.000</td></tr>
+ <tr><td class="content-en">Nominal Amount Sold</td><td class="content-en">50.000.000</td></tr>
+ <tr><td>Döviz Cinsi</td><td>EUR</td></tr>
+ <tr><td>Vade Tarihi</td><td>05.04.2028</td></tr>
+</table>
+<p>Bankamızca yurt dışında ihraç edilen tahvilin satışı tamamlanmış olup, işlemin detayları yukarıdaki tabloda yer almaktadır ve kamuoyuna duyurulur.</p>
+</body></html>
+"""
+
+
+def test_kap_form_rows_become_label_value_lines():
+    from utils.article_fetcher import extract_form_lines
+
+    lines = extract_form_lines(_KAP_FORM_HTML)
+    assert "Satışı Gerçekleştirilen Nominal Tutar: 50.000.000" in lines
+    assert "Döviz Cinsi: EUR" in lines
+    # The ceiling's currency stays under its own section header.
+    assert lines.index("[İlgili İhraç Tavanı Bilgileri]") < lines.index("Para Birimi: USD") < lines.index(
+        "[İhraç Edilecek Sermaye Piyasası Aracı Bilgileri]") < lines.index("Döviz Cinsi: EUR")
+    assert not any("Güncelleme" in l or "İlgili Şirketler" in l or "Nominal Amount" in l for l in lines)
+
+
+@pytest.mark.parametrize("title", [
+    "KCHOL'de Global & BofA'dan Yüksek Hacimli Alımlar",
+    "BofA borsada alıma döndü: YKBNK ve KCHOL listenin başında",
+    "Emanet Koç Holding hisselerinde 1,4 milyarlık sır! 36 yıl sonra ortaya çıktı",
+    "Koç Holding hisselerinin peşinde 33 yıl! Servetin değeri...",
+])
+def test_broker_flow_and_wealth_trivia_dropped(title):
+    assert is_market_noise(title)
+
+
+def test_numbers_and_labels_are_cleaned_up():
+    from utils.formatting import polish_sections, turkish_numbers
+    from scrapers.models import SynthesizedSection
+
+    assert turkish_numbers("30,000,000,000 TRY tavan, 173,751,000 TRY satıldı") == "30 mlr TL tavan, 173,75 mn TL satıldı"
+    assert turkish_numbers("1.713.897.558 TL ceza, vade 05.04.2028") == "1,71 mlr TL ceza, vade 05.04.2028"
+    assert turkish_numbers("05 Oct 2026 tarihinde") == "5 Ekim 2026 tarihinde"
+
+    merged = polish_sections([
+        SynthesizedSection(subheading="Borçlanma", narrative="A", source_urls=["https://a.example/1"]),
+        SynthesizedSection(subheading="Dava", narrative="B"),
+        SynthesizedSection(subheading="borçlanma.", narrative="C", source_urls=["https://a.example/2"]),
+    ])
+    assert [s.subheading for s in merged] == ["Borçlanma", "Dava"]
+    assert merged[0].narrative == "A\n\nC" and len(merged[0].source_urls) == 2
+
+
+def test_kap_xbrl_rows_use_the_human_label():
+    from utils.article_fetcher import extract_form_lines
+
+    html = """<table>
+      <tr><td>oda_UpdateAnnouncementFlag|</td><td>Yapılan Açıklama Güncelleme mi?</td><td>Evet (Yes)</td></tr>
+      <tr><td>oda_ExplanationTextBlock|</td><td>Açıklamalar</td><td>Rekabet Kurulu soruşturması uzlaşmayla sonuçlanmıştır.</td></tr>
+      <tr><td>[Türkçe]</td></tr><tr><td>Türkçe</td></tr>
+    </table>"""
+    assert extract_form_lines(html) == ["Açıklamalar: Rekabet Kurulu soruşturması uzlaşmayla sonuçlanmıştır."]
+
+
+def test_bigpara_copy_of_a_read_kap_filing_is_dropped():
+    from main import _drop_mirrored_filings
+    from scrapers.models import RawScrapedItem
+    from config.constants import SourceType
+
+    kap = RawScrapedItem(source=SourceType.KAP, ticker="AKBNK", raw_title="Özel Durum Açıklaması (Genel)", raw_body_snippet="Açıklamalar: ...")
+    mirror = RawScrapedItem(source=SourceType.BIGPARA, ticker="AKBNK", raw_title="AKBNK AKBANK T.A.Ş. (Özel Durum Açıklaması (Genel))",
+                            raw_url="https://www.bigpara.com/haberler/kap-haberleri/akbnk-x_ID1/")
+    news = RawScrapedItem(source=SourceType.BIGPARA, ticker="AKBNK", raw_title="Akbank'a yeni kredi", raw_url="https://www.bigpara.com/haberler/x")
+    assert _drop_mirrored_filings([kap, mirror, news], "AKBNK") == [kap, news]
+
+
+def test_kap_text_block_without_other_fields():
+    """Özel Durum filing: only flags and the explanation block; the block
+    must reach the model, not KAP's search help text or XBRL ids."""
+    from utils.article_fetcher import structured_text
+
+    html = """<html><body><div class="search-help">() Aşağıdaki öneriler, sadece endeks/pazar/dönem bilgisi girildiğinde listelenmektedir.</div>
+    <table>
+    <tr><td>oda_DelayedAnnouncementFlag|</td><td>Yapılan Açıklama Ertelenmiş Bir Açıklama mı?</td><td>Hayır (No)</td></tr>
+    <tr><td>oda_ExplanationSection|</td><td>Açıklamalar<div class="content-en">Explanations</div></td></tr>
+    </table>
+    <div><span>oda_ExplanationTextBlock|</span><div><p>Rekabet Kurulu soruşturması 1.713.897.558 TL idari para cezası ile uzlaşmayla sonuçlanmıştır.</p>
+    <div class="content-en"><p>The investigation was settled.</p></div></div></div>
+    </body></html>"""
+    text = structured_text(html, "https://www.kap.org.tr/tr/Bildirim/1")
+    assert text == "Açıklama: Rekabet Kurulu soruşturması 1,71 mlr TL idari para cezası ile uzlaşmayla sonuçlanmıştır."
+
+
+def test_polish_canonical_labels_isin_and_dates():
+    from scrapers.models import SynthesizedSection
+    from utils.formatting import polish_sections
+
+    sections = [
+        SynthesizedSection(subheading="Tahvil İhracı", narrative="173,75 mn TL tahvil sattı, vade 6 Dec 2027, ISIN TRSAKBKA2716.", source_urls=[]),
+        SynthesizedSection(subheading="İzin", narrative="SPK ihraç izni verdi.", source_urls=[]),
+        SynthesizedSection(subheading="İzin", narrative="Bakanlık tesis için çevre izni verdi.", source_urls=[]),
+        SynthesizedSection(subheading="İş Yatırım", narrative="İş Yatırım 3Ç kar tahmini raporu yayımladı (rakamlar haberde yer almıyor).", source_urls=[]),
+        SynthesizedSection(subheading="Ceza", narrative="1,71 mlr TL ceza ödendi.", source_urls=[]),
+    ]
+    out = {s.subheading: s.narrative for s in polish_sections(sections)}
+    assert out["Borçlanma"] == "173,75 mn TL tahvil sattı, vade 6 Aralık 2027.\n\nSPK ihraç izni verdi."
+    assert out["Analist raporu"] == "İş Yatırım 3Ç kar tahmini raporu yayımladı."
+    assert out["Dava"] == "1,71 mlr TL ceza ödendi."
+    assert out["İzin"] == "Bakanlık tesis için çevre izni verdi."  # not a borrowing permit

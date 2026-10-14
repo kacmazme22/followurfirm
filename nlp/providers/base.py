@@ -27,6 +27,11 @@ class SummarizerProvider(ABC):
         callers (main.py) are expected to catch it and fall back to
         NoopProvider for that ticker rather than have the pipeline crash."""
 
+    async def pick_headline(self, candidates: list[str]) -> str | None:
+        """One short line naming the day's most striking item, for the
+        email subject. Default: none (the plain subject is used)."""
+        return None
+
     async def summarize_market(self, headlines: list[NewsItem]) -> list[SynthesizedSection]:
         """"Piyasa Gündemi" bullets from the day's market headlines. Default:
         none — without an LLM a raw headline dump is exactly the noise this

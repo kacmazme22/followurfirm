@@ -57,8 +57,13 @@ def _carry_kap_link(winner: NewsItem, loser: NewsItem) -> NewsItem:
 def _resolve_duplicate(a: NewsItem, b: NewsItem) -> NewsItem:
     """`a` is the item already kept, `b` is the new candidate found to be a
     duplicate of it. Returns whichever should survive, with the other's KAP
-    link (if any) carried onto it. Ties keep `a` (first-seen)."""
-    winner, loser = (b, a) if _priority(b) > _priority(a) else (a, b)
+    link (if any) carried onto it. Equal priority: the copy with more text
+    wins (a Bing article over a bare Google headline of the same story),
+    then `a` (first-seen)."""
+    def rank(item: NewsItem) -> tuple[int, int]:
+        return _priority(item), len(item.body_snippet or "")
+
+    winner, loser = (b, a) if rank(b) > rank(a) else (a, b)
     return _carry_kap_link(winner, loser)
 
 

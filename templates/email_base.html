@@ -109,7 +109,11 @@
                       <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:{{ cat_color }}; margin-top:5px;"></span>
                     </td>
                     <td style="padding:8px 0 8px 10px; vertical-align:top; border-bottom:1px solid {{ colors.C.sand }}; font-family:{{ colors.SANS }}; font-size:13px; color:{{ colors.C.ink }}; line-height:1.5;">
-                      <b>{{ section.subheading }}.</b>{% if section.narrative != section.subheading %} {{ section.narrative }}{% endif %}
+                      {% set paragraphs = section.narrative.split('\n\n') %}
+                      <b>{{ section.subheading }}.</b>{% if section.narrative != section.subheading %} {{ paragraphs[0] }}{% endif %}
+                      {% for paragraph in paragraphs[1:] %}
+                      <div style="margin-top:6px;">{{ paragraph }}</div>
+                      {% endfor %}
                       {% if section.source_urls %}<span style="margin-left:4px;">{{ source_links(section.source_urls) }}</span>{% endif %}
                     </td>
                   </tr>

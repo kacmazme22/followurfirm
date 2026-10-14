@@ -57,7 +57,7 @@ import groq
 from groq import AsyncGroq
 from pydantic import ValidationError
 
-from config.constants import NewsCategory
+from config.constants import NewsCategory, SourceType
 from config.settings import AppConfig
 from nlp.providers.base import SummarizerProvider
 from scrapers.models import CompanyReport, NewsItem, SynthesizedCompanyReport, SynthesizedSection
@@ -69,13 +69,18 @@ logger = logging.getLogger(__name__)
 # budget plus a ~3.4k-token prompt was rejected outright (413, "Requested
 # 9435", 2026-10-05). Answers are now a few short bullets, so a much smaller
 # budget leaves room for the article text that actually matters.
-DEFAULT_MAX_TOKENS = 2500
+DEFAULT_MAX_TOKENS = 3000
 MARKET_MAX_TOKENS = 1500
 
 # Article text sent per call, shared across the items that have a body, so
 # a busy day trims each body instead of tipping the request over the limit.
-BODY_BUDGET_CHARS = 9000
-MAX_BODY_CHARS_PER_ITEM = 1500
+BODY_BUDGET_CHARS = 8000
+MAX_BODY_CHARS_PER_ITEM = 1800
+
+# gpt-oss spends output tokens on hidden reasoning before the JSON; at the
+# default effort a 19-item Akbank call ran out of max_tokens mid-answer
+# (finish_reason='length', 2026-10-14). "low" keeps the reasoning short.
+REASONING_EFFORT = "low"
 MAX_ATTEMPTS = 2  # 1 initial try + 1 retry
 
 # On a 413 "request too large" guard failure, the retry uses
@@ -126,9 +131,18 @@ def _today_line() -> str:
     return f"Bugünün tarihi: {datetime.now(ZoneInfo('Europe/Istanbul')).strftime('%d.%m.%Y')}"
 
 
-def _body_cap(items: list[NewsItem]) -> int:
-    with_body = sum(1 for item in items if item.body_snippet) or 1
-    return min(MAX_BODY_CHARS_PER_ITEM, BODY_BUDGET_CHARS // with_body)
+def _is_filing(item: NewsItem) -> bool:
+    return item.source == SourceType.KAP or "/kap-haberleri/" in str(item.url or "")
+
+
+def _body_cap(items: list[NewsItem], item: NewsItem | None = None) -> int:
+    """Share of BODY_BUDGET_CHARS for one item. KAP filings (structured
+    forms with the amounts) weigh double: with 19 Akbank items an even split
+    left ~470 characters each and cut the forms off (2026-10-14 dry run)."""
+    weights = [(2 if _is_filing(i) else 1) for i in items if i.body_snippet]
+    total = sum(weights) or 1
+    weight = 2 if item is not None and _is_filing(item) else 1
+    return min(MAX_BODY_CHARS_PER_ITEM, BODY_BUDGET_CHARS * weight // total)
 
 
 def _item_urls(item: NewsItem) -> list[str]:
@@ -178,6 +192,10 @@ YAZIM:
 - narrative: uzunluğu haberdeki bilgiye göre belirle; kısa yazmak için bilgi atma, uzatmak için dolgu ekleme. Basit bir olay (tek atama, tek patent) 1-2 cümle; çok parçalı bir olay (finansal sonuç, büyük sözleşme, birleşme, analist raporu, geri alım programı) yatırımcının ihtiyaç duyduğu tüm rakamlarla 3-5 cümle. Önce olay ve büyüklüğü (tutar, adet, oran, fiyat aralığı, karşı taraf, tarih), sonra kritik detaylar (vade, finansman, devreye alma, kârın kullanımı, öncekiyle karşılaştırma). Örnek: "Azerenerji (Azerbaycan) ile 250 MWh batarya depolama tesisi için 58,6 mn $'lık EPC-F sözleşmesi imzalandı. Finansman 4 yıl geri ödemeli, tesis 1 yıl içinde devreye girecek."
 - Okuyucu linke tıklamadan anlamalı: haberin özündeki rakamı (hedef fiyat ve önceki değeri, tavsiye, tutar, oran) mutlaka yaz. "Yeni hedef fiyatını duyurdu" gibi rakamsız bir cümle YASAK.
 - Ham metni kopyalama; bildirim dilini ("Şirketimiz", "kamuoyuna duyurulur") ve içi boş yorumları ("dikkat çekecek", "önem taşımaktadır", "olumlu etki") yazma.
+- AYNI OLAY = TEK MADDE: bir olayın KAP bildirimi ve onu aktaran haberler (ör. Rekabet Kurulu cezasının KAP açıklaması + "Akbank'a 1,7 milyar TL ceza" haberleri; bilanço tarihinin KAP finansal takvimi + "bilançoyu 27 Ekim'de açıklayacak" haberleri) tek maddedir. Farklı kaynaklarda farklı yazılmış aynı tutar (1.713.897.558 TL = 1,7 milyar TL) AYNI rakamdır: ASLA toplama, iki ayrı olay sanma.
+- Röportaj, demeç ve görüş yazıları analist raporu DEĞİLDİR; etiketleri "Röportaj". Etiketi kurum adı yapma ("İş Yatırım" değil "Analist raporu"). Metne "(içerik detaylandırılmamış)", "(rakamlar haberde yer almıyor)" gibi parantez içi açıklama ekleme.
+- Aynı TÜRDEKİ farklı olaylara (ör. iki ayrı borçlanma) AYNI etiketi ver; bunlar tek başlık altında ayrı paragraflar olarak gösterilecek.
+- Rakamları Türkçe yaz: "30 mlr TL", "173,8 mn TL", ondalık için virgül; "30,000,000,000", "TRY", "Oct" gibi İngilizce biçimler YASAK.
 - Aynı rapor/olay için birden fazla haber varsa (ör. aynı aracı kurum raporunun hedef fiyat ve sektör görünümü haberleri) TEK maddede birleştir.
 - source_ids: maddeyi destekleyen haberlerin numaraları (ör. [1, 3]). Metne URL yazma.
 
@@ -186,20 +204,22 @@ RAKAM DOĞRULUĞU (en önemli kural):
 - Rakamı kaynaktaki birimiyle aktar. Kısaltma yalnızca kesinse: 58.600.000 -> 58,6 mn; 1.500.000.000 -> 1,5 mlr. Birim belirsizse (milyon mu milyar mı) kaynaktaki yazımı aynen kullan; aynı tutarı iki farklı birimle ASLA yazma.
 - Bir tarihin ne olduğu (ihraç, vade, ödeme) kaynakta açık değilse o tarihi yazma.
 - Tarihleri kullanıcı mesajındaki "Bugünün tarihi" ile karşılaştır: geçmişteki bir olayı (yapılmış genel kurul, ödenmiş temettü) gelecek zamanla YAZMA; tescil/sonuç bildirimini "yapılacak" diye sunma.
-- Borçlanma bildirimlerinde ihraç TAVANI/limiti ile fiilen satılan (nominal) tutarı ayır; "ihraç etti" diye yalnızca satılan tutarı yaz, tavanı ancak ayrıca belirt. Yönetim kurulu/SPK onay tarihleri gibi süreç tarihlerini yazma.
-- Bir haberin özü bir rakamsa (tutar, oran) ve kaynakta o rakam yoksa, o maddeyi hiç yazma. İSTİSNALAR (rakam olmasa da HER ZAMAN yaz): (1) analist raporu, yatırımcı sunumu, analist/yatırımcı toplantısı ve toplantı notları (aşağıya bak); (2) kaynağı "kap" olan önemli bildirimler (borçlanma/tahvil ihracı, sözleşme, yatırım, satın alma/satış, temettü, geri alım, sermaye artırımı, yönetim/ortaklık değişikliği, dava): detay yoksa tek cümleyle ne olduğunu yaz, ör. "Yurtdışı piyasalarda tahvil ihracı yaptı; tutar ve vade KAP bildiriminde." Okuyucu linkten açar. "(metin yok, yalnızca başlık)" işaretli haberlerde bilgi sadece başlıktan ibarettir; başlıkta olmayan hiçbir şeyi yazma.
+- Borçlanma bildirimlerinde ihraç TAVANI/limiti ile fiilen satılan (nominal) tutarı ayır; "ihraç etti" diye yalnızca satılan tutarı yaz, tavanı ancak ayrıca belirt. Yönetim kurulu/SPK onay tarihleri gibi süreç tarihlerini yazma. Tahvil ihracında yalnızca okuyucunun işine yarayanı yaz: satılan tutar, vade (tarih ya da gün), faiz/getiri ve kime satıldığı; ISIN, fiyat, iskonto oranı, kupon sayısı gibi teknik alanları YAZMA. Ör.: "173,75 mn TL'lik, 6 Aralık 2027 vadeli, %40 faizli tahvili nitelikli yatırımcılara sattı."
+- Formdaki tutarlar kodla Türkçe kısaltmaya çevrilmiş gelir ("30 mlr", "173,75 mn"); bunları AYNEN kullan, yeniden çevirme.
+- Bir haberin özü bir rakamsa (tutar, oran) ve kaynakta o rakam yoksa, o maddeyi hiç yazma. İSTİSNALAR (rakam olmasa da HER ZAMAN yaz): (1) analist raporu, yatırımcı sunumu, analist/yatırımcı toplantısı ve toplantı notları (aşağıya bak); (2) temettü, bedelsiz, geri alım ve genel kurul haberleri: başlıkta tarih veya olay varsa (ör. "16 Ekim'de ödenecek", "yarın temettüsüz işlem görecek") yalnızca başlıktaki olguyu yaz, ör. "Temettü 16 Ekim'de ödenecek; hisse 15 Ekim'de temettüsüz işlem görecek. Tutar habere göre linkte."; (3) kaynağı "kap" olan önemli bildirimler (borçlanma/tahvil ihracı, sözleşme, yatırım, satın alma/satış, temettü, geri alım, sermaye artırımı, yönetim/ortaklık değişikliği, dava): detay yoksa tek cümleyle ne olduğunu yaz, ör. "Yurtdışı piyasalarda tahvil ihracı yaptı; tutar ve vade KAP bildiriminde." Okuyucu linkten açar. "(metin yok, yalnızca başlık)" işaretli haberlerde bilgi sadece başlıktan ibarettir; başlıkta olmayan hiçbir şeyi yazma.
 - Yalnızca bildirim türünü söyleyen başlıklardan ("... Genel Kurul İşlemlerine İlişkin Bildirim", "... Özel Durum Açıklaması") içerik yoksa madde yazma; "KAP bildiriminde bulundu" gibi içi boş cümle YASAK.
 - Hiçbir haber kriterlere uymuyorsa {"sections": []} döndür; boş bölüm dolgu metinden iyidir.
 
 Çıktıyı SADECE JSON olarak ver ("category" ve "kisaca" alanlarını yalnızca kullanıcı mesajı isterse ekle):
 {"kisaca": "...", "sections": [{"category": "...", "subheading": "...", "narrative": "...", "source_ids": [1]}]}"""
 
-MARKET_SYSTEM_PROMPT = """Sen Borsa İstanbul odaklı bir sabah bülteninin editörüsün. Sana son 24 saatin piyasa haberlerinin BAŞLIKLARI ve linkleri verilecek. Bültenin en üstündeki "Piyasa Gündemi" kutusunu yaz: piyasayı etkileyebilecek en önemli 3-5 gelişme.
+MARKET_SYSTEM_PROMPT = """Sen Borsa İstanbul odaklı bir sabah bülteninin editörüsün. Sana son 24 saatin piyasa haberlerinin başlıkları ve (varsa) kısa özetleri verilecek. Bültenin en üstündeki "Piyasa Gündemi" kutusunu yaz: piyasayı etkileyebilecek en önemli 3-5 gelişme.
 
 ÖNCELİK SIRASI: TCMB/Fed faiz kararları ve açıklamaları, enflasyon ve diğer makro veriler (TÜİK, büyüme, cari denge, işsizlik), BIST endeks değişiklikleri ve Borsa İstanbul kararları, vergi/regülasyon/SPK kararları, kur ve küresel piyasalarda büyük hareketler, bugün açıklanacak önemli veriler.
 
 KURALLAR:
-- SADECE başlıklarda geçen bilgi ve rakamları kullan; rakam UYDURMA. Başlıkta rakam yoksa rakamsız yaz.
+- SADECE başlık ve özetlerde geçen bilgi ve rakamları kullan; rakam UYDURMA.
+- Her madde okuyucuya OLGUYU vermeli: beklentinin kendisi (kaç baz puan, hangi kurum), tahminin rakamları (büyüme %, enflasyon %), kararın içeriği. "Beklentiler netleşti", "tahminlerini açıkladı", "rakamlar belli oldu" gibi içeriği vermeyen cümle YASAK; başlık ve özet olguyu vermiyorsa o maddeyi yazma.
 - Teknik analiz, destek/direnç, tek bir hissenin günlük fiyat hareketi, "günün en çok yükselenleri", sıradan günlük endeks/altın/döviz fiyat hareketleri gibi maddeleri ALMA (yalnızca rekor veya olağanüstü bir hareketse, rakamıyla yaz).
 - Rakamı başlıkta nasıl geçiyorsa öyle yaz; "12.4xx" gibi yer tutucu veya yuvarlatılmış rakam YASAK. Rakam yoksa rakamsız yaz.
 - Başlık geçmiş bir dönemi anlatıyorsa (bugünün tarihinden önceki bir ayın kararı vb.) onu bugünün haberi gibi YAZMA.
@@ -220,6 +240,11 @@ KURALLAR:
 {"sections": [{"subheading": "...", "narrative": "...", "source_ids": [1]}]}"""
 
 
+HEADLINE_MAX_TOKENS = 1500
+HEADLINE_MAX_CHARS = 90
+HEADLINE_SYSTEM_PROMPT = """Bir yatırımcı bülteninin e-posta konusunu yazıyorsun. Sana bugünkü bültenin maddeleri verilecek. Okuyucu için en çarpıcı ve önemli TEK gelişmeyi seç (şirket haberleri genelde piyasa gündeminden önce gelir; büyük tutar, ceza, sözleşme, temettü, bilanço gibi olaylar öne çıkar) ve en fazla 70 karakterlik Türkçe bir başlık yaz. Rakam varsa koru, şirket adını/kodunu yaz. Maddelerde olmayan hiçbir bilgiyi ekleme. Sadece JSON ver: {"baslik": "..."}"""
+
+
 class _Parsed(NamedTuple):
     """One Groq response: (category code or None, section) pairs plus the
     optional top-level "kisaca" lede."""
@@ -233,6 +258,7 @@ class GroqProvider(SummarizerProvider):
         self._client = AsyncGroq(api_key=settings.env.groq_api_key)
         self._model = settings.env.groq_model
         self._max_tokens = max_tokens
+        self._reasoning_effort: str | None = REASONING_EFFORT
 
     async def summarize_company_report(self, report: CompanyReport) -> SynthesizedCompanyReport:
         categories = report.ordered_categories()
@@ -253,9 +279,48 @@ class GroqProvider(SummarizerProvider):
             sections_by_category=sections_by_category,
         )
 
+    async def _create(self, **kwargs):
+        """chat.completions.create with low reasoning effort; if the API
+        rejects the parameter (older model/SDK), it's dropped for the rest
+        of the run and the call is repeated without it."""
+        effort = getattr(self, "_reasoning_effort", REASONING_EFFORT)
+        if effort:
+            try:
+                return await self._client.chat.completions.create(model=self._model, reasoning_effort=effort, **kwargs)
+            except (groq.BadRequestError, TypeError) as exc:
+                if "reasoning" not in str(exc).lower():
+                    raise
+                logger.warning("reasoning_effort desteklenmiyor, parametresiz devam: %s", exc)
+                self._reasoning_effort = None
+        return await self._client.chat.completions.create(model=self._model, **kwargs)
+
+    async def pick_headline(self, candidates: list[str]) -> str | None:
+        """The user wanted the subject to open with the day's most striking
+        news instead of a fixed "FollowUrFirm Günlük Bülten — date". Any
+        failure just means the plain subject."""
+        if not candidates:
+            return None
+        prompt = "\n".join([_today_line(), "Bugünkü bültenin maddeleri:", *[f"- {c}" for c in candidates]])
+        try:
+            completion = await self._create(
+                max_tokens=HEADLINE_MAX_TOKENS,
+                response_format={"type": "json_object"},
+                messages=[{"role": "system", "content": HEADLINE_SYSTEM_PROMPT}, {"role": "user", "content": prompt}],
+            )
+            headline = json.loads(completion.choices[0].message.content).get("baslik")
+        except Exception as exc:
+            logger.warning("Konu başlığı üretilemedi: %s: %s", type(exc).__name__, exc)
+            return None
+        if not isinstance(headline, str) or not headline.strip():
+            return None
+        return headline.strip().rstrip(".")[:HEADLINE_MAX_CHARS]
+
     async def summarize_market(self, headlines: list[NewsItem]) -> list[SynthesizedSection]:
-        lines = [_today_line(), "Son 24 saatin piyasa başlıkları:", ""]
-        lines += [f"{i}. {item.title}" for i, item in enumerate(headlines, start=1)]
+        lines = [_today_line(), "Son 24 saatin piyasa haberleri (başlık ve varsa kısa özet):", ""]
+        for i, item in enumerate(headlines, start=1):
+            lines.append(f"{i}. {item.title}")
+            if item.body_snippet:
+                lines.append(f"   Özet: {item.body_snippet}")
         parsed = await self._call_with_retry(
             "PIYASA", "piyasa_gundemi", "\n".join(lines), headlines,
             system_prompt=MARKET_SYSTEM_PROMPT, max_tokens=MARKET_MAX_TOKENS,
@@ -334,8 +399,7 @@ class GroqProvider(SummarizerProvider):
         prompt asks for a "category" field per section, the per-category
         prompt doesn't and its caller ignores it."""
         try:
-            completion = await self._client.chat.completions.create(
-                model=self._model,
+            completion = await self._create(
                 max_tokens=max_tokens if max_tokens is not None else self._max_tokens,
                 response_format={"type": "json_object"},
                 messages=[
@@ -408,17 +472,16 @@ class GroqProvider(SummarizerProvider):
             f"Her section'a bir \"category\" alanı ekle; değeri şunlardan biri olmalı: {codes}.",
             "Ön-kategori bir ipucudur; haberin içeriğine göre daha uygun kategoriyi seçebilirsin.",
             "Aynı olay/rapor birden fazla haberde veya ön-kategoride geçse bile TEK section yaz ve tek kategoriye koy.",
-            "Ayrıca üst seviyede bir \"kisaca\" alanı yaz: günün en önemli gelişmesini anlatan TEK cümle (en fazla ~25 kelime). Hiç section yoksa \"kisaca\" boş string olsun.",
+            "Ayrıca üst seviyede bir \"kisaca\" alanı yaz: şirketin bugünkü TÜM önemli gelişmelerini birlikte özetleyen 1-2 cümle (en fazla ~40 kelime), en önemlisi önce. Tek bir habere indirgeme; ör. \"Rekabet Kurulu'nun 1,7 mlr TL cezası uzlaşmayla kapandı; banka 30 mlr TL'lik yurt içi tahvil ihracı yaptı ve 3. çeyrek bilançosunu 27 Ekim'de açıklayacak.\" Hiç section yoksa \"kisaca\" boş string olsun.",
             "",
             "Ham haberler:",
         ]
         sources = [item for _, items in categories for item in items]
-        body_cap = _body_cap(sources)
         hints = [category.value for category, items in categories for _ in items]
         for i, (item, hint) in enumerate(zip(sources, hints), start=1):
             lines.append(f"{i}. [ön-kategori: {hint}] Başlık: {item.title}")
             lines.append(
-                f"   Metin: {item.body_snippet[:body_cap]}" if item.body_snippet else "   (metin yok, yalnızca başlık)"
+                f"   Metin: {item.body_snippet[:_body_cap(sources, item)]}" if item.body_snippet else "   (metin yok, yalnızca başlık)"
             )
             lines.append("")
         return "\n".join(lines), sources
@@ -426,11 +489,10 @@ class GroqProvider(SummarizerProvider):
     @staticmethod
     def _build_user_prompt(ticker: str, category: NewsCategory, items: list[NewsItem]) -> str:
         lines = [_today_line(), f"Ticker: {ticker}", f"Kategori: {category.display_name_tr}", "", "Ham haberler:"]
-        body_cap = _body_cap(items)
         for i, item in enumerate(items, start=1):
             lines.append(f"{i}. Başlık: {item.title}")
             lines.append(
-                f"   Metin: {item.body_snippet[:body_cap]}" if item.body_snippet else "   (metin yok, yalnızca başlık)"
+                f"   Metin: {item.body_snippet[:_body_cap(items, item)]}" if item.body_snippet else "   (metin yok, yalnızca başlık)"
             )
             lines.append("")
         return "\n".join(lines)
