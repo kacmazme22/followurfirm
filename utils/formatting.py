@@ -72,10 +72,18 @@ def canonical_label(label: str, narrative: str) -> str:
     return label
 
 
+# The same remark as a whole sentence: "Brüt temettü tutarı hisse başına
+# açıklanmış ancak miktar haberde yer almıyor." (GUBRF, 2026-10-14).
+_META_SENTENCE = re.compile(
+    r"\s*[^.()]*(?:haberde yer almıyor|haberde yer almamakta|haberde belirtilmemiş|detaylandırılmamış)[^.()]*\.(?=\s|$)"
+)
+
+
 def clean_prose(text: str) -> str:
     text = text.replace("\u202f", " ").replace("\u00a0", " ")
     text = _ISIN.sub("", text)
-    return _META_REMARK.sub("", text)
+    text = _META_REMARK.sub("", text)
+    return _META_SENTENCE.sub("", text).strip()
 
 
 def turkish_numbers(text: str) -> str:
