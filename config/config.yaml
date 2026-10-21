@@ -25,9 +25,19 @@ tickers:
     - symbol: KCHOL
       name: "Koç Holding"
       enabled: true
+    - symbol: SAHOL
+      name: "Sabancı Holding"
+      enabled: true
     - symbol: AKBNK
       name: "Akbank"
       enabled: true
+    - symbol: GLYHO
+      name: "Global Yatırım Holding"
+      enabled: true
+    - symbol: RGYAS
+      name: "Rönesans Gayrimenkul Yatırım"
+      enabled: true
+    
   global: []  # Phase 2 — e.g. AAPL, NVDA, TSLA, PLTR
 
 recipients:
