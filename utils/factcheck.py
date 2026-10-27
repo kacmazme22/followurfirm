@@ -50,7 +50,6 @@ _COMPOUND = re.compile(
     r"(\d+(?:,\d+)?)\s+(milyar|milyon|bin)(?:\s+(\d+(?:,\d+)?)\s+(milyon|bin))?(?:\s+(\d+(?:,\d+)?)\s+(bin))?(?:\s+(\d+))?",
     re.IGNORECASE,
 )
-_SENTENCE_END = re.compile(r"(?<=[a-zçğıöşü0-9%)”\"'])\.\s+(?=[A-ZÇĞİÖŞÜ0-9%])")
 
 
 def _value(integer: str, fraction: str | None) -> float:
@@ -114,8 +113,20 @@ def unsourced(text: str, numbers: set[float]) -> list[str]:
     return [shown for shown, value in _amounts(text, checkable_only=True) if not _known(value, numbers)]
 
 
+_BREAK = re.compile(r"\.\s+(?=[A-ZÇĞİÖŞÜ0-9%])")
+_SENTENCE_TAIL = re.compile(r"(?:[a-zçğıöşü0-9%)”\"']|[A-ZÇĞİÖŞÜ]{2})$")
+
+
 def _sentences(paragraph: str) -> list[str]:
-    return _SENTENCE_END.split(paragraph)
+    """Split at ". " before a capital, but not after an abbreviation like
+    "A.Ş." (single capitals); "USD. %57" and "TL. Şirket" do split."""
+    parts, start = [], 0
+    for match in _BREAK.finditer(paragraph):
+        if _SENTENCE_TAIL.search(paragraph[start:match.start()]):
+            parts.append(paragraph[start:match.start()])
+            start = match.end()
+    parts.append(paragraph[start:])
+    return parts
 
 
 def drop_unsourced(text: str, numbers: set[float], label: str) -> str:
