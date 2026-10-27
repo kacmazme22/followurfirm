@@ -530,8 +530,9 @@ def test_fact_check_drops_invented_amount():
 
     source = "Yeni Mağazacılık A.Ş.'ye 6,47 mn USD ilave ödeme. Toplam 91,95 milyon dolar. yüzde 57,12 hisse."
     sections = check_sections([
-        SynthesizedSection(subheading="Satış", narrative="%57,12 hisse 325 mn USD'ye satıldı. İlave 6,47 mn USD ödendi; toplam yaklaşık 92 mn USD.", source_urls=[]),
-        SynthesizedSection(subheading="Uydurma", narrative="Şirket 1,2 mlr TL kâr açıkladı.", source_urls=[]),
+        SynthesizedSection(subheading="Satış", narrative="İlave 6,47 mn USD ödendi; toplam yaklaşık 92 mn USD. %57,12 hisse 325 mn USD'ye satıldı.", source_urls=[]),
+        # An invented first sentence takes its paragraph with it: what follows leans on it.
+        SynthesizedSection(subheading="Uydurma", narrative="Şirket 1,2 mlr TL kâr açıkladı. Bu tutar %57,12 arttı.", source_urls=[]),
     ], source, "SAHOL")
     assert [(s.subheading, s.narrative) for s in sections] == [("Satış", "İlave 6,47 mn USD ödendi; toplam yaklaşık 92 mn USD.")]
     assert check_line("SAHOL: CarrefourSA 325 mn USD'ye satıldı", source, "konu") is None

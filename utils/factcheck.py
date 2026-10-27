@@ -27,12 +27,12 @@ TOLERANCE = 0.015  # relative: rounding to 2-3 significant digits
 _SCALES = {
     "bin": 1e3,
     "mn": 1e6, "mln": 1e6, "milyon": 1e6, "million": 1e6,
-    "mlr": 1e9, "mlrd": 1e9, "milyar": 1e9, "billion": 1e9,
+    "mlr": 1e9, "mlrd": 1e9, "mlyr": 1e9, "milyar": 1e9, "billion": 1e9,
     "trilyon": 1e12,
 }
 _NUMBER = re.compile(
     r"(?<![\w.,])(%\s?)?(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d+))?(?![\d])"
-    r"(?:\s?(%))?(?:\s?(bin|mn|mln|milyon|million|mlr|mlrd|milyar|billion|trilyon)\b)?",
+    r"(?:\s?(%))?(?:\s?(bin|mn|mln|milyon|million|mlr|mlrd|mlyr|milyar|billion|trilyon)\b)?",
     re.IGNORECASE,
 )
 _MONTHS = "ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık"
@@ -57,9 +57,13 @@ def _value(integer: str, fraction: str | None) -> float:
     return float(f"{integer.replace('.', '')}.{fraction or 0}")
 
 
+# Reuters writes "14.1 MLYR TL": a decimal point, not Turkish grouping.
+_DOT_DECIMAL = re.compile(r"(?<![\d.,])(\d{1,3})\.(\d{1,2})(?![\d.])")
+
+
 def _normalize(text: str) -> str:
     """"MİLYON" lowercases to "mi̇lyon" (i + combining dot) in Python."""
-    return text.replace("İ", "i")
+    return _DOT_DECIMAL.sub(r"\1,\2", text.replace("İ", "i"))
 
 
 def _collapse_compounds(text: str) -> str:
@@ -119,8 +123,15 @@ def drop_unsourced(text: str, numbers: set[float], label: str) -> str:
     paragraphs = []
     for paragraph in text.split("\n\n"):
         kept = []
-        for sentence in _sentences(paragraph):
+        for position, sentence in enumerate(_sentences(paragraph)):
             bad = unsourced(sentence, numbers)
+            if bad and position == 0:
+                # The rest of the paragraph leans on its first sentence: on
+                # 2026-10-27 dropping it left "Kredilerin maliyetleri ..."
+                # with no loan in sight.
+                logger.warning("[%s] kaynakta olmayan rakam (%s), paragraf çıkarıldı: %s", label, ", ".join(bad), paragraph)
+                kept = []
+                break
             if bad:
                 logger.warning("[%s] kaynakta olmayan rakam (%s), cümle çıkarıldı: %s", label, ", ".join(bad), sentence)
             else:

@@ -186,13 +186,20 @@ _CONTENT_FREE = re.compile(r"(açıklandı|belli oldu|netleşti|açıklayacak|a�
 
 
 def _drop_content_free(sections: list[SynthesizedSection]) -> list[SynthesizedSection]:
+    """Per paragraph: merged bullets hid "TCMB Politika Faizi Kararı
+    Açıklandı." in front of a Fed paragraph (2026-10-27)."""
     kept = []
     for section in sections:
-        text = section.narrative.strip()
-        if not re.search(r"\d", text) and _CONTENT_FREE.search(text):
-            logger.info("Piyasa gündemi: bilgi içermeyen madde çıkarıldı: %s: %s", section.subheading, text)
-            continue
-        kept.append(section)
+        paragraphs = []
+        for paragraph in section.narrative.split("\n\n"):
+            text = paragraph.strip()
+            if not re.search(r"\d", text) and _CONTENT_FREE.search(text):
+                logger.info("Piyasa gündemi: bilgi içermeyen madde çıkarıldı: %s: %s", section.subheading, text)
+            else:
+                paragraphs.append(paragraph)
+        if paragraphs:
+            section.narrative = "\n\n".join(paragraphs)
+            kept.append(section)
     return kept
 
 

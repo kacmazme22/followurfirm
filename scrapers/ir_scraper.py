@@ -66,6 +66,7 @@ DISCOVERY_VERSION = 2
 COMMON_IR_PATHS = ("/yatirimci-iliskileri", "/tr/yatirimci-iliskileri", "/yatirimci-iliskileri/", "/investor-relations")
 
 _DOCUMENT_LINK = re.compile(r"\.pdf(\?|$)|/detay/|/yil-liste/", re.IGNORECASE)
+_MEDIA_FILE = re.compile(r"\.(mp3|mp4|wav|jpe?g|png|gif|zip)(\?|$)", re.IGNORECASE)
 _ENGLISH_PATH = re.compile(r"/en/|_en\.pdf|-en\.pdf|english", re.IGNORECASE)
 # Investor documents, not the site's news or product pages.
 _DOCUMENT_WORDS = re.compile(
@@ -132,7 +133,7 @@ def listing_pages(html: str, page_url: str) -> list[str]:
     for anchor in soup.find_all("a", href=True):
         href = urljoin(page_url, anchor["href"].strip()).split("#")[0]
         label = " ".join(anchor.get_text(" ").split())
-        if site(href) != host or _DOCUMENT_LINK.search(href) or _ENGLISH_PATH.search(href):
+        if site(href) != host or _DOCUMENT_LINK.search(href) or _MEDIA_FILE.search(href) or _ENGLISH_PATH.search(href):
             continue
         if _LISTING_WORDS.search(f"{label} {unquote(urlparse(href).path)}") and href not in pages and href != page_url:
             pages.append(href)

@@ -62,6 +62,11 @@ _MARKET_NOISE_PATTERNS = [
         r"formasyon",
         r"al[- ]sat seviye",
         r"hedef seviye",
+        # Daily technical picks with a stop level ("PhillipCapital'den SAHOL
+        # için 90,50 TL kısa vadeli hedef", 2026-10-27).
+        r"kısa vadeli hedef",
+        r"(yükseliş|düşüş) sürecek mi",
+        r"zarar kes",
         r"stop[- ]?loss",
         r"açığa satış",
         r"işlem hacmi",

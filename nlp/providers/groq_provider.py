@@ -203,7 +203,7 @@ DAHİL ET: sözleşme/sipariş/ihale, yatırım/tesis/kapasite, satın alma/birl
 
 AYRICA DAHİL ET (okuyucu bunları önemli buluyor; doğru etiketle yaz): aracı kurumların bu hissedeki alım/satım akışı (ör. "BofA, AKBNK'de 3,5 mlr TL'lik alımla ilk sırada" — yalnızca haber bu hisseyi anıyorsa; etiket "Aracı kurum işlemleri"), özel emirle/toptan satış işlemleri (etiket "Özel emir işlemi"), payların borsada işlem görecek tipe dönüşümü ve MKK dönüşüm başvuruları (kim, kaç TL nominal; etiket "Pay dönüşümü"), yöneticilerin röportaj ve demeçleri (ne söylendiği, somut hedef/rakam; etiket "Röportaj").
 
-DIŞLA: teknik analiz ve fiyat seviyeleri, günlük fiyat/hacim/açığa satış verisi, hisse fiyat sayfaları, çekiliş/kampanya/promosyon duyuruları, model portföy ağırlıkları; uyum raporları, yönetim kurulu toplantı/katılım istatistikleri, komite listeleri, form alanları ("güncelleme mi, düzeltme mi, ertelenmiş mi"), sorumluluk beyanları; çok şirketli raporlarda diğer şirketlerin bilgileri.
+DIŞLA: teknik analiz ve fiyat seviyeleri, "zarar kes"/stop seviyeli kısa vadeli teknik hisse önerileri (aracı kurum adı geçse de analist raporu değildir), günlük fiyat/hacim/açığa satış verisi, hisse fiyat sayfaları, çekiliş/kampanya/promosyon duyuruları, model portföy ağırlıkları; uyum raporları, yönetim kurulu toplantı/katılım istatistikleri, komite listeleri, form alanları ("güncelleme mi, düzeltme mi, ertelenmiş mi"), sorumluluk beyanları; çok şirketli raporlarda diğer şirketlerin bilgileri.
 
 ANALİST RAPORLARI VE YATIRIMCI SUNUMLARI (okuyucu için çok değerli, asla atlama):
 - Metin varsa: kurumu, hedef fiyatı (öncekiyle birlikte), tavsiyeyi, tahmin değişikliklerini ve raporun/sunumun ana tezini 2-5 cümlede özetle.
