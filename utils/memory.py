@@ -24,7 +24,7 @@ import json
 import logging
 import math
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from rapidfuzz import fuzz
@@ -38,6 +38,8 @@ MEMORY_PATH = Path(".digest-memory/memory.json")
 KEEP_DAYS = 14
 MARGIN_HOURS = 6
 MAX_LOOKBACK_HOURS = 7 * 24
+REPORTED_DAYS = 7
+REPORTED_CHARS = 220
 TITLE_SIMILARITY = 90
 MIN_TITLE_WORDS = 5
 
@@ -85,6 +87,12 @@ class DigestMemory:
         # pages found for it by search (scrapers/ir_scraper.py)
         self.ir_seen: dict[str, list[str]] = {}
         self.ir_pages: dict[str, dict] = {}
+        # What the mail said (ticker or "PIYASA", date, label, text): the
+        # same event reaches us again through another source, so links and
+        # titles alone don't stop it (see previously_reported).
+        self.reported: list[dict] = []
+        # Dated company events announced in earlier mails (results dates).
+        self.calendar: list[dict] = []
         self._inputs: dict[str, list[NewsItem]] = {}
 
     def note_inputs(self, symbol: str, items: list[NewsItem]) -> None:
@@ -107,6 +115,8 @@ class DigestMemory:
         memory = cls(datetime.fromisoformat(last) if last else None, data.get("entries", []))
         memory.ir_seen = data.get("ir_seen", {})
         memory.ir_pages = data.get("ir_pages", {})
+        memory.reported = data.get("reported", [])
+        memory.calendar = data.get("calendar", [])
         logger.info("Hafıza: son gönderim %s, %d kayıt", memory.last_sent_at, len(memory.entries))
         return memory
 
@@ -117,6 +127,8 @@ class DigestMemory:
             "entries": self.entries,
             "ir_seen": self.ir_seen,
             "ir_pages": self.ir_pages,
+            "reported": self.reported,
+            "calendar": self.calendar,
         }
         path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
 
@@ -155,6 +167,33 @@ class DigestMemory:
                 logger.info("%s: hafıza: %s tarihli bültende vardı, elendi: %s", symbol, entry.get("sent_on"), item.title)
         return kept
 
+    # --- what was already said --------------------------------------------
+
+    def previously_reported(self, key: str, today: date | None = None) -> list[str]:
+        """Lines for the prompt: what the last REPORTED_DAYS mails said about
+        `key` (a ticker or "PIYASA"). On 2026-10-24..26 GUBRF's 7,25 mlr TL
+        investment and SAHOL's CarrefourSA payment were written three days
+        running, each time from a different news site."""
+        today = today or datetime.now(timezone.utc).date()
+        cutoff = (today - timedelta(days=REPORTED_DAYS)).isoformat()
+        return [
+            f"{date.fromisoformat(e['date']).strftime('%d.%m')} {e['label']}: {e['text']}"
+            for e in self.reported
+            if e.get("key") == key and cutoff <= e.get("date", "") < today.isoformat()
+        ]
+
+    def upcoming(self, today: date | None = None, days: int = 7) -> list[dict]:
+        """Company events from earlier mails falling in the next `days`."""
+        today = today or datetime.now(timezone.utc).date()
+        end = (today + timedelta(days=days)).isoformat()
+        seen, result = set(), []
+        for event in sorted(self.calendar, key=lambda e: e["date"]):
+            key = (event["ticker"], event["date"])
+            if today.isoformat() <= event["date"] <= end and key not in seen:
+                seen.add(key)
+                result.append(event)
+        return result
+
     # --- recording -------------------------------------------------------
 
     def record(self, digest_run: DigestRun, now: datetime | None = None) -> None:
@@ -176,7 +215,61 @@ class DigestMemory:
                     })
         cutoff = (now - timedelta(days=KEEP_DAYS)).date().isoformat()
         self.entries = [e for e in self.entries if e.get("sent_on", "") >= cutoff]
+        self._record_texts(digest_run, sent_on)
+        self.reported = [e for e in self.reported if e.get("date", "") >= cutoff]
+        self.calendar = [e for e in self.calendar if e.get("date", "") >= sent_on]
         self.last_sent_at = now
+
+    def _record_texts(self, digest_run: DigestRun, sent_on: str) -> None:
+        def add(key: str, label: str, text: str) -> None:
+            self.reported.append({"key": key, "date": sent_on, "label": label, "text": " ".join(text.split())[:REPORTED_CHARS]})
+
+        for section in digest_run.market_brief:
+            add("PIYASA", section.subheading, section.narrative)
+        for report in digest_run.company_reports:
+            for _, sections in report.ordered_sections():
+                for section in sections:
+                    add(report.ticker, section.subheading, section.narrative)
+                    for event_date in _scheduled_dates(section.narrative, sent_on):
+                        self.calendar.append({
+                            "ticker": report.ticker, "date": event_date, "label": section.subheading,
+                            "text": " ".join(section.narrative.split())[:160],
+                        })
+
+
+_MONTH_NUMBERS = {
+    "ocak": 1, "şubat": 2, "mart": 3, "nisan": 4, "mayıs": 5, "haziran": 6,
+    "temmuz": 7, "ağustos": 8, "eylül": 9, "ekim": 10, "kasım": 11, "aralık": 12,
+}
+_TEXT_DATE = re.compile(r"\b(\d{1,2}) (" + "|".join(_MONTH_NUMBERS) + r")\w*(?: (\d{4}))?", re.IGNORECASE)
+_NUMERIC_DATE = re.compile(r"\b(\d{1,2})[./](\d{1,2})[./](\d{4})\b")
+# Only announcements of something still to come: a results date, a general
+# meeting, a dividend payment ("27 Ekim'de açıklayacak", "ödenecek").
+_FUTURE_EVENT = re.compile(
+    r"açıklayacak|açıklanacak|yayımlanacak|paylaşılacak|ödenecek|ödeyecek|toplanacak|yapılacak|planlan", re.IGNORECASE
+)
+
+
+def _scheduled_dates(text: str, sent_on: str) -> list[str]:
+    """Future dates in a sentence announcing an upcoming event."""
+    year = int(sent_on[:4])
+    dates = []
+    for sentence in re.split(r"(?<=[.;])\s+", text):
+        if not _FUTURE_EVENT.search(sentence):
+            continue
+        for day, month, yr in _TEXT_DATE.findall(sentence):
+            dates.append((int(yr or year), _MONTH_NUMBERS[month.lower().replace("İ", "i")], int(day)))
+        for day, month, yr in _NUMERIC_DATE.findall(sentence):
+            dates.append((int(yr), int(month), int(day)))
+    result = []
+    for y, m, d in dates:
+        try:
+            iso = date(y, m, d).isoformat()
+        except ValueError:
+            continue
+        if iso > sent_on and iso not in result:
+            result.append(iso)
+    return result
 
 
 def load_memory(enabled: bool = True) -> DigestMemory:

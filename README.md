@@ -55,6 +55,25 @@ ve Actions cache'inde saklanır (14 gün).
 - Dry run hafızayı okur ama kaydetmez. Daha önce gönderilmiş haberleri de
   görmek için `ignore_memory` seçeneği kullanılır.
 
+## Geri bildirim
+
+Maildeki her maddenin yanında küçük "yanlış · gereksiz" linkleri, en altta
+"Bülten hakkında not yaz" linki var. Tıklayınca kendi adresinden kendine
+hazır doldurulmuş bir mail açılır (konu: `FollowUrFirm geri bildirim | tür |
+tarih | hisse | başlık`, gövdede maddenin metni). Bu mailler Gmail'de
+`subject:"FollowUrFirm geri bildirim"` aramasıyla toplanıp düzeltilir.
+
+## Doğruluk ve tekrar kontrolleri
+
+- Çıktıdaki her tutar ve oran kaynaklarda aranır; bulunamayan rakamı içeren
+  cümle çıkarılır ve loga yazılır (`utils/factcheck.py`). Konu satırı da
+  yalnızca kontrolden geçen maddelerden seçilir.
+- Son 7 günün bülten maddeleri modele "zaten yazıldı" listesi olarak verilir;
+  aynı olay başka bir kaynaktan gelse de yalnızca yeni bir bilgi varsa yazılır
+  (şirketler ve Piyasa Gündemi için).
+- Önceki maillerde duyurulan tarihler (bilanço, temettü) Piyasa Gündemi'nde
+  "Şirket takvimi" satırı olarak hatırlatılır.
+
 ## Logdan inceleme
 
 Her çalışmanın Actions logunda `audit` satırları var: modele giden her

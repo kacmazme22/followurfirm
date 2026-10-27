@@ -131,6 +131,27 @@ def _today_line() -> str:
     return f"Bugünün tarihi: {datetime.now(ZoneInfo('Europe/Istanbul')).strftime('%d.%m.%Y')}"
 
 
+def _previously_reported_lines(previously_reported: list[str] | None) -> list[str]:
+    """Earlier mails' items, so the same event isn't written again when it
+    comes back through another source."""
+    if not previously_reported:
+        return []
+    return [
+        "",
+        "SON GÜNLERDE BÜLTENDE ZATEN YAZILANLAR (bunları TEKRAR YAZMA; aynı olay için yalnızca gerçekten YENİ bir "
+        "bilgi varsa — yeni tutar, tamamlanma, onay, karar — yaz ve neyin yeni olduğunu söyle):",
+        *[f"- {line}" for line in previously_reported],
+    ]
+
+
+# Mondays came out with an empty market box (2026-10-20, 10-26): the
+# weekend has little news, but the week ahead is exactly what's needed.
+MONDAY_NOTE = (
+    "Bugün pazartesi: haberlerde bu hafta açıklanacak karar ve veriler (TCMB/Fed/ECB toplantıları, enflasyon, "
+    "büyüme vb.) varsa bunları tarihleriyle tek bir \"Haftanın gündemi\" maddesinde topla."
+)
+
+
 def _is_filing(item: NewsItem) -> bool:
     return item.source == SourceType.KAP or "/kap-haberleri/" in str(item.url or "")
 
@@ -180,7 +201,9 @@ SYSTEM_PROMPT = """Sen bir aracı kurum araştırma bülteninin editörüsün. O
 
 DAHİL ET: sözleşme/sipariş/ihale, yatırım/tesis/kapasite, satın alma/birleşme/varlık satışı, ihracat/yeni pazar, finansal sonuçlar, temettü, pay geri alımı, sermaye artırımı/bedelsiz, borçlanma/tahvil/kredi, yönetim ve ortaklık yapısı değişikliği, içeriden pay alım-satımı, dava/ceza/regülasyon kararı, derecelendirme notu, patent/lisans, şirketin açıkladığı hedefler, aracı kurum hedef fiyat/tavsiye değişikliği (rakamıyla).
 
-DIŞLA: teknik analiz ve fiyat seviyeleri, günlük fiyat/hacim/açığa satış verisi, blok alım-satım akışı, model portföy ağırlıkları; uyum raporları, yönetim kurulu toplantı/katılım istatistikleri, komite listeleri, form alanları ("güncelleme mi, düzeltme mi, ertelenmiş mi"), sorumluluk beyanları; somut karar veya rakam içermeyen yönetici röportaj/konferans sözleri; çok şirketli raporlarda diğer şirketlerin bilgileri.
+AYRICA DAHİL ET (okuyucu bunları önemli buluyor; doğru etiketle yaz): aracı kurumların bu hissedeki alım/satım akışı (ör. "BofA, AKBNK'de 3,5 mlr TL'lik alımla ilk sırada" — yalnızca haber bu hisseyi anıyorsa; etiket "Aracı kurum işlemleri"), özel emirle/toptan satış işlemleri (etiket "Özel emir işlemi"), payların borsada işlem görecek tipe dönüşümü ve MKK dönüşüm başvuruları (kim, kaç TL nominal; etiket "Pay dönüşümü"), yöneticilerin röportaj ve demeçleri (ne söylendiği, somut hedef/rakam; etiket "Röportaj").
+
+DIŞLA: teknik analiz ve fiyat seviyeleri, "zarar kes"/stop seviyeli kısa vadeli teknik hisse önerileri (aracı kurum adı geçse de analist raporu değildir), günlük fiyat/hacim/açığa satış verisi, hisse fiyat sayfaları, çekiliş/kampanya/promosyon duyuruları, model portföy ağırlıkları; uyum raporları, yönetim kurulu toplantı/katılım istatistikleri, komite listeleri, form alanları ("güncelleme mi, düzeltme mi, ertelenmiş mi"), sorumluluk beyanları; çok şirketli raporlarda diğer şirketlerin bilgileri.
 
 ANALİST RAPORLARI VE YATIRIMCI SUNUMLARI (okuyucu için çok değerli, asla atlama):
 - Metin varsa: kurumu, hedef fiyatı (öncekiyle birlikte), tavsiyeyi, tahmin değişikliklerini ve raporun/sunumun ana tezini 2-5 cümlede özetle.
@@ -188,9 +211,12 @@ ANALİST RAPORLARI VE YATIRIMCI SUNUMLARI (okuyucu için çok değerli, asla atl
 - subheading: "Analist raporu", "Yatırımcı sunumu", "Toplantı notu" veya "Hedef fiyat".
 
 YAZIM:
-- subheading: 1-3 kelimelik olay etiketi ("Yeni iş", "Geri alım", "Temettü", "Varlık satışı", "Satın alma", "Yatırım", "Finansal sonuç", "Borçlanma", "Yönetim", "Ortaklık yapısı", "Patent", "Analist görüşü", "Dava").
-- narrative: uzunluğu haberdeki bilgiye göre belirle; kısa yazmak için bilgi atma, uzatmak için dolgu ekleme. Basit bir olay (tek atama, tek patent) 1-2 cümle; çok parçalı bir olay (finansal sonuç, büyük sözleşme, birleşme, analist raporu, geri alım programı) yatırımcının ihtiyaç duyduğu tüm rakamlarla 3-5 cümle. Önce olay ve büyüklüğü (tutar, adet, oran, fiyat aralığı, karşı taraf, tarih), sonra kritik detaylar (vade, finansman, devreye alma, kârın kullanımı, öncekiyle karşılaştırma). Örnek: "Azerenerji (Azerbaycan) ile 250 MWh batarya depolama tesisi için 58,6 mn $'lık EPC-F sözleşmesi imzalandı. Finansman 4 yıl geri ödemeli, tesis 1 yıl içinde devreye girecek."
+- subheading: 1-3 kelimelik olay etiketi ("Yeni iş", "Geri alım", "Temettü", "Varlık satışı", "Satın alma", "Yatırım", "Finansal sonuç", "Bilanço tarihi", "Borçlanma", "Sermaye artırımı", "Yönetim", "Ortaklık yapısı", "Pay dönüşümü", "Aracı kurum işlemleri", "Özel emir işlemi", "Röportaj", "Sosyal sorumluluk", "Patent", "Dava"). Şirketin aldığı sendikasyon kredisi ve tahvil "Borçlanma"dır, "Yeni iş" DEĞİLDİR.
+- narrative: uzunluğu haberdeki bilgiye göre belirle; kısa yazmak için bilgi atma, uzatmak için dolgu ekleme. Basit bir olay (tek atama, tek patent) 1-2 cümle; çok parçalı bir olay (finansal sonuç, büyük sözleşme, birleşme, analist raporu, geri alım programı) yatırımcının ihtiyaç duyduğu tüm rakamlarla 3-5 cümle. Önce olay ve büyüklüğü (tutar, adet, oran, fiyat aralığı, karşı taraf, tarih), sonra kritik detaylar (vade, finansman, devreye alma, kârın kullanımı, öncekiyle karşılaştırma). Örnek: "X Belediyesi ile 120 mn TL'lik raylı sistem bakım sözleşmesi imzalandı. Süre 3 yıl, ödemeler aylık hakediş." Bir madde en fazla 4 cümle (~70 kelime) olsun; kredi dilimleri gibi ayrıntıları tek tek sayma, toplamı ve en önemli koşulu yaz.
 - Okuyucu linke tıklamadan anlamalı: haberin özündeki rakamı (hedef fiyat ve önceki değeri, tavsiye, tutar, oran) mutlaka yaz. "Yeni hedef fiyatını duyurdu" gibi rakamsız bir cümle YASAK.
+- ÖNCE YENİ OLAN: Bir haber hem eski hem yeni bilgi içeriyorsa (ör. eylülde imzalanan sözleşmenin finansmanının bugün sağlanması) maddeyi bugünkü gelişmeyle aç, eski bilgiyi tarihiyle bağlam olarak ver: "21 Eylül'de imzalanan 58,6 mn USD'lik sözleşmenin finansmanı sağlandı." Haber, birkaç gün önce gerçekleşmiş bir olayı anlatıyorsa yine yaz ama tarihini belirt ("16 Ekim'de ödendi").
+- Temettüde oranı değil pay başına tutarı yaz: brüt oran %449,10 ise "pay başına brüt 4,49 TL" (1 TL nominal pay); net tutar varsa onu da ver.
+- Röportaj ve demeçleri "Analist raporu" diye etiketleme; kimin, nerede, ne söylediğini somut içeriğiyle yaz.
 - Olayları belirli geçmiş zamanla (-di) ya da gelecek zamanla yaz: "açıkladı", "ödeyecek". Duyulan geçmiş zaman (-miş: "açıklamış", "sunmuş") KULLANMA.
 - Ham metni kopyalama; bildirim dilini ("Şirketimiz", "kamuoyuna duyurulur") ve içi boş yorumları ("dikkat çekecek", "önem taşımaktadır", "olumlu etki") yazma.
 - AYNI OLAY = TEK MADDE: bir olayın KAP bildirimi ve onu aktaran haberler (ör. Rekabet Kurulu cezasının KAP açıklaması + "Akbank'a 1,7 milyar TL ceza" haberleri; bilanço tarihinin KAP finansal takvimi + "bilançoyu 27 Ekim'de açıklayacak" haberleri) tek maddedir. Farklı kaynaklarda farklı yazılmış aynı tutar (1.713.897.558 TL = 1,7 milyar TL) AYNI rakamdır: ASLA toplama, iki ayrı olay sanma.
@@ -244,8 +270,18 @@ KURALLAR:
 
 
 HEADLINE_MAX_TOKENS = 1500
-HEADLINE_MAX_CHARS = 90
-HEADLINE_SYSTEM_PROMPT = """Bir yatırımcı bülteninin e-posta konusunu yazıyorsun. Sana bugünkü bültenin maddeleri verilecek. Okuyucu için en çarpıcı ve önemli TEK gelişmeyi seç (şirket haberleri genelde piyasa gündeminden önce gelir; büyük tutar, ceza, sözleşme, temettü, bilanço gibi olaylar öne çıkar) ve en fazla 70 karakterlik Türkçe bir başlık yaz. Rakam varsa koru, şirket adını/kodunu yaz. Maddelerde olmayan hiçbir bilgiyi ekleme. Sadece JSON ver: {"baslik": "..."}"""
+HEADLINE_SYSTEM_PROMPT = """Bir yatırımcı bülteninin e-posta konusunu yazıyorsun. Sana bugünkü bültenin maddeleri verilecek.
+
+SEÇİM: Okuyucunun maili açmasını sağlayacak en çarpıcı, en YENİ ve somut TEK gelişmeyi seç. Güçlü adaylar: büyük tutarlı sözleşme, yatırım, satın alma/satış, pay geri alımı, temettü, finansal sonuç, ceza, TCMB/Fed faiz kararı. Zayıf adaylar: izin/onay yenilemesi, bilanço tarihi duyurusu, analist tahmini, rutin borçlanma.
+
+BİÇİM:
+- En fazla 60 karakter; tek ve tam bir cümle, fiille bitsin.
+- Şirket unvanı yerine borsa kodu: "GUBRF: ..." (piyasa haberinde kod yok).
+- Tek bir ana rakam yeter; oran ve ayrıntı yığma, birden fazla yüzdeyi sıralama.
+- Örnekler: "GUBRF: 4 mlr TL'lik pay geri alım programı başladı" · "TCMB faizi 100 bp indirerek %36'ya çekti" · "YEOTK: Azerbaycan projesinin 58,6 mn USD finansmanı sağlandı" · "SAHOL: 7 mlr TL'lik pay geri alım programı açıkladı".
+- Maddelerde olmayan hiçbir bilgi veya rakam ekleme.
+
+Sadece JSON ver: {"baslik": "..."}"""
 
 
 class _Parsed(NamedTuple):
@@ -284,10 +320,14 @@ class GroqProvider(SummarizerProvider):
         sections_by_category: dict[NewsCategory, list[SynthesizedSection]] = {}
         summary: str | None = None
         if total_items <= CHUNK_THRESHOLD:
-            sections_by_category, summary = await self._synthesize_whole_report(report.ticker, categories)
+            sections_by_category, summary = await self._synthesize_whole_report(
+                report.ticker, categories, report.previously_reported
+            )
         else:
             for category, items in categories:
-                sections_by_category[category] = await self._synthesize_category(report.ticker, category, items)
+                sections_by_category[category] = await self._synthesize_category(
+                    report.ticker, category, items, report.previously_reported
+                )
 
         return SynthesizedCompanyReport(
             ticker=report.ticker,
@@ -348,10 +388,15 @@ class GroqProvider(SummarizerProvider):
             return None
         if not isinstance(headline, str) or not headline.strip():
             return None
-        return headline.strip().rstrip(".")[:HEADLINE_MAX_CHARS]
+        return headline.strip().rstrip(".")
 
-    async def summarize_market(self, headlines: list[NewsItem]) -> list[SynthesizedSection]:
-        lines = [_today_line(), "Son 24 saatin piyasa haberleri (başlık ve varsa kısa özet):", ""]
+    async def summarize_market(
+        self, headlines: list[NewsItem], previously_reported: list[str] | None = None
+    ) -> list[SynthesizedSection]:
+        lines = [_today_line(), *_previously_reported_lines(previously_reported)]
+        if datetime.now(ZoneInfo("Europe/Istanbul")).weekday() == 0:
+            lines.append(MONDAY_NOTE)
+        lines += ["", "Son 24 saatin piyasa haberleri (başlık ve varsa kısa özet):", ""]
         for i, item in enumerate(headlines, start=1):
             lines.append(f"{i}. {item.title}")
             if item.body_snippet:
@@ -363,14 +408,15 @@ class GroqProvider(SummarizerProvider):
         return [section for _, section in parsed.sections]
 
     async def _synthesize_whole_report(
-        self, ticker: str, categories: list[tuple[NewsCategory, list[NewsItem]]]
+        self, ticker: str, categories: list[tuple[NewsCategory, list[NewsItem]]],
+        previously_reported: list[str] | None = None,
     ) -> tuple[dict[NewsCategory, list[SynthesizedSection]], str | None]:
         """One call for all of a ticker's items. Per-category calls can't see
         each other, so one broker report filed under both Finansal Sonuçlar
         and Sektörel came back as three overlapping sections (AKBNK/HSBC,
         2026-10-05 dry run). Here the model sees everything at once and puts
         each story in exactly one category."""
-        prompt, sources = self._build_report_prompt(ticker, categories)
+        prompt, sources = self._build_report_prompt(ticker, categories, previously_reported)
         result: dict[NewsCategory, list[SynthesizedSection]] = {}
         parsed = await self._call_with_retry(ticker, "tum_kategoriler", prompt, sources)
         for category_code, section in parsed.sections:
@@ -379,7 +425,7 @@ class GroqProvider(SummarizerProvider):
         return result, parsed.summary
 
     async def _synthesize_category(
-        self, ticker: str, category: NewsCategory, items: list[NewsItem]
+        self, ticker: str, category: NewsCategory, items: list[NewsItem], previously_reported: list[str] | None = None
     ) -> list[SynthesizedSection]:
         chunk_size = CATEGORY_CHUNK_SIZE_OVERRIDES.get(category, CHUNK_SIZE)
         chunks = (
@@ -390,7 +436,7 @@ class GroqProvider(SummarizerProvider):
 
         sections: list[SynthesizedSection] = []
         for chunk in chunks:
-            prompt = self._build_user_prompt(ticker, category, chunk)
+            prompt = self._build_user_prompt(ticker, category, chunk, previously_reported)
             parsed = await self._call_with_retry(ticker, category.value, prompt, chunk)
             sections.extend(section for _, section in parsed.sections)
         return sections
@@ -496,7 +542,7 @@ class GroqProvider(SummarizerProvider):
 
     @staticmethod
     def _build_report_prompt(
-        ticker: str, categories: list[tuple[NewsCategory, list[NewsItem]]]
+        ticker: str, categories: list[tuple[NewsCategory, list[NewsItem]]], previously_reported: list[str] | None = None
     ) -> tuple[str, list[NewsItem]]:
         codes = ", ".join(f'"{c.value}" ({c.display_name_tr})' for c in NewsCategory)
         lines = [
@@ -507,7 +553,8 @@ class GroqProvider(SummarizerProvider):
             f"Her section'a bir \"category\" alanı ekle; değeri şunlardan biri olmalı: {codes}.",
             "Ön-kategori bir ipucudur; haberin içeriğine göre daha uygun kategoriyi seçebilirsin.",
             "Aynı olay/rapor birden fazla haberde veya ön-kategoride geçse bile TEK section yaz ve tek kategoriye koy.",
-            "Ayrıca üst seviyede bir \"kisaca\" alanı yaz: şirketin bugünkü TÜM önemli gelişmelerini birlikte özetleyen 1-2 cümle (en fazla ~40 kelime), en önemlisi önce. Tek bir habere indirgeme; ör. \"Rekabet Kurulu'nun 1,7 mlr TL cezası uzlaşmayla kapandı; banka 30 mlr TL'lik yurt içi tahvil ihracı yaptı ve 3. çeyrek bilançosunu 27 Ekim'de açıklayacak.\" Hiç section yoksa \"kisaca\" boş string olsun.",
+            "Ayrıca üst seviyede bir \"kisaca\" alanı yaz: YALNIZCA iki veya daha fazla section varsa, şirketin bugünkü gelişmelerini birlikte özetleyen tek cümle (en fazla ~35 kelime), en önemlisi önce; maddeleri tekrar etme, öne çıkanı söyle. Tek section varsa ya da hiç yoksa \"kisaca\" boş string olsun.",
+            *_previously_reported_lines(previously_reported),
             "",
             "Ham haberler:",
         ]
@@ -522,8 +569,13 @@ class GroqProvider(SummarizerProvider):
         return "\n".join(lines), sources
 
     @staticmethod
-    def _build_user_prompt(ticker: str, category: NewsCategory, items: list[NewsItem]) -> str:
-        lines = [_today_line(), f"Ticker: {ticker}", f"Kategori: {category.display_name_tr}", "", "Ham haberler:"]
+    def _build_user_prompt(
+        ticker: str, category: NewsCategory, items: list[NewsItem], previously_reported: list[str] | None = None
+    ) -> str:
+        lines = [
+            _today_line(), f"Ticker: {ticker}", f"Kategori: {category.display_name_tr}",
+            *_previously_reported_lines(previously_reported), "", "Ham haberler:",
+        ]
         for i, item in enumerate(items, start=1):
             lines.append(f"{i}. Başlık: {item.title}")
             lines.append(

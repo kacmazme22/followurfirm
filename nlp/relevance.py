@@ -62,6 +62,11 @@ _MARKET_NOISE_PATTERNS = [
         r"formasyon",
         r"al[- ]sat seviye",
         r"hedef seviye",
+        # Daily technical picks with a stop level ("PhillipCapital'den SAHOL
+        # için 90,50 TL kısa vadeli hedef", 2026-10-27).
+        r"kısa vadeli hedef",
+        r"(yükseliş|düşüş) sürecek mi",
+        r"zarar kes",
         r"stop[- ]?loss",
         r"açığa satış",
         r"işlem hacmi",
@@ -70,17 +75,13 @@ _MARKET_NOISE_PATTERNS = [
         r"en çok (alan|satan|işlem gören|yükselen|düşen|değer kaybeden|değer kazanan)",
         r"günün (en|kazanan|kaybeden)",
         r"(günlük|sabah|piyasa) (bülten|not|yorum)",
-        # Order-flow, not business news: "KCHOL'de iki kurumdan yüklü satış",
-        # broker model-portfolio reweightings (2026-10-05 dry run).
-        r"yüklü (alım|satış)",
-        r"kurum(dan|lardan) (gelen )?(alım|satış)",
+        # Broker model-portfolio reweightings (2026-10-05 dry run). Broker
+        # order flow naming the company ("BofA'dan 3,5 mlr TL'lik alım: YKBNK
+        # ve AKBNK ilk sırada") is NOT dropped any more: the user wants it,
+        # labelled "Aracı kurum işlemleri" (2026-10-27).
         r"(model|döngüsel) portföy",
-        # Broker-flow and wealth-trivia stories (2026-10-14: "KCHOL'de Global &
-        # BofA'dan Yüksek Hacimli Alımlar", "Emanet Koç Holding hisselerinde
-        # 1,4 milyarlık sır!", "Koç Holding hisselerinin peşinde 33 yıl!").
-        r"hacimli (alım|satış)",
-        r"(alıma|satışa) döndü",
-        r"listenin başında",
+        # Wealth trivia ("Emanet Koç Holding hisselerinde 1,4 milyarlık sır!",
+        # "Koç Holding hisselerinin peşinde 33 yıl!").
         r"servet",
         r"\bsırr?ı?\b",
         r"peşinde \d+ yıl",
@@ -93,11 +94,14 @@ _MARKET_NOISE_PATTERNS = [
         r"canlı grafik",
         # Price-limit trading halts: a price event, not company news.
         r"devre kesici",
-        # Bigpara relays of market-infrastructure notices that list the
-        # ticker among others (MKK share-type conversions, BIST index lists).
-        r"merkezi kayıt kuruluşu",
-        r"borsa istanbul a\.ş",
+        # BIST index composition lists naming the ticker among others. MKK
+        # share conversions and Borsa İstanbul special-order notices are kept:
+        # the user counts them as news (2026-10-27).
         r"pay endeksleri",
+        # Lotteries and quote pages: "Akbank QR çekiliş sonuçları 2026!",
+        # "Akbank T.A.Ş. (AKBNK)" (a price page, 2026-10-24).
+        r"çekiliş",
+        r"^[^()]{0,60}\([a-zçğıöşü0-9]{4,6}\)$",
         # Price-move reports: "Akbank hisseleri yüzde 3 yükseldi", "KCHOL
         # payları %2 değer kaybetti". Requires the hisse/pay subject so an
         # earnings headline ("net kârı yüzde 30 arttı") isn't dropped.

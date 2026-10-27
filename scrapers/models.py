@@ -147,6 +147,9 @@ class CompanyReport(BaseModel):
     total_items: int = 0
     sources_used: set[SourceType] = Field(default_factory=set)
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # What earlier mails already said about this company (utils/memory.py),
+    # given to the model so the same event isn't written again.
+    previously_reported: list[str] = Field(default_factory=list)
 
     def add_item(self, item: NewsItem) -> None:
         self.items_by_category.setdefault(item.category, []).append(item)

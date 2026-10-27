@@ -11,7 +11,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import httpx
@@ -30,10 +31,12 @@ from scrapers.bing_news_scraper import BingNewsScraper
 from scrapers.google_news_scraper import GoogleNewsScraper
 from scrapers.ir_scraper import IrPageScraper
 from scrapers.kap_scraper import KapScraper
-from scrapers.models import CompanyReport, DigestRun, RawScrapedItem, SynthesizedCompanyReport
+from scrapers.models import CompanyReport, DigestRun, RawScrapedItem, SynthesizedCompanyReport, SynthesizedSection
 from templates.styles import template_colors
 from utils.audit import log_inputs, log_outputs
-from utils.formatting import polish_report, turkish_numbers
+from utils.factcheck import check_line, check_sections
+from utils.feedback import feedback_link
+from utils.formatting import fit_headline, keep_summary_only_when_useful, polish_report, standard_units, turkish_numbers
 from utils.email_sender import build_digest_subject, send_digest_email
 from utils.memory import DigestMemory, load_memory
 
@@ -157,7 +160,10 @@ async def _build_company_report(
         await BingNewsScraper(ticker, settings.yaml.sources.bing_news, _GOOGLE_NEWS_POLITENESS).fill_headline_only(news_items)
     news_items = memory.drop_reported(news_items, ticker.symbol)
 
-    report = CompanyReport(ticker=ticker.symbol, company_name=ticker.name)
+    report = CompanyReport(
+        ticker=ticker.symbol, company_name=ticker.name,
+        previously_reported=memory.previously_reported(ticker.symbol),
+    )
     for item in news_items:
         report.add_item(item)
     logger.info(
@@ -173,6 +179,7 @@ async def _build_company_report(
     try:
         source_text = " ".join(f"{i.title} {i.body_snippet or ''}" for i in sent_items)
         synthesized = polish_report(await provider.summarize_company_report(report), source_text)
+        synthesized = _fact_checked(synthesized, source_text)
         log_outputs(ticker.symbol, [s for _, secs in synthesized.ordered_sections() for s in secs], sent_items)
         return synthesized
     except RuntimeError as exc:
@@ -185,6 +192,37 @@ async def _build_company_report(
             "llm", ticker.symbol, f"LLM sentezi başarısız oldu ({exc}), ham liste gösteriliyor"
         )
         return await NoopProvider().summarize_company_report(report)
+
+
+def _fact_checked(report: SynthesizedCompanyReport, source_text: str) -> SynthesizedCompanyReport:
+    """Sentences whose amounts/rates aren't in the sources are removed
+    (utils/factcheck.py); "Kısaca" only stays when it's checked and useful."""
+    report.sections_by_category = {
+        category: kept
+        for category, sections in report.ordered_sections()
+        if (kept := check_sections(sections, source_text, report.ticker))
+    }
+    report.summary = check_line(report.summary, source_text, f"{report.ticker} Kısaca")
+    return keep_summary_only_when_useful(report)
+
+
+_CALENDAR_LABELS = {"bilanço tarihi": "finansal sonuçlar", "finansal sonuç": "finansal sonuçlar", "temettü": "temettü ödemesi"}
+
+
+def _calendar_section(memory: DigestMemory) -> SynthesizedSection | None:
+    """"Bugün: AKBNK finansal sonuçlar · 9 Kasım: KCHOL finansal sonuçlar":
+    dates announced in earlier mails (Akbank's results date was in the
+    14 October mail; on the 27th nothing said "today")."""
+    today = datetime.now(ZoneInfo("Europe/Istanbul")).date()
+    parts = []
+    for event in memory.upcoming(today):
+        when = "Bugün" if event["date"] == today.isoformat() else turkish_numbers(
+            date.fromisoformat(event["date"]).strftime("%d %b %Y")
+        ).lstrip("0")
+        parts.append(f"{when}: {event['ticker']} {_CALENDAR_LABELS.get(event['label'].lower(), event['label'].lower())}")
+    if not parts:
+        return None
+    return SynthesizedSection(subheading="Şirket takvimi", narrative=" · ".join(parts))
 
 
 class KapUnavailable(Exception):
@@ -208,7 +246,12 @@ async def run_pipeline(memory: DigestMemory | None = None) -> DigestRun:
     kap_raw_by_ticker = await fetch_kap_once_and_group(settings.active_bist_tickers, settings, digest_run)
     if not kap_raw_by_ticker and os.environ.get("REQUIRE_KAP", "").lower() == "true":
         raise KapUnavailable()
-    digest_run.market_brief = await build_market_brief(settings, get_provider(settings))
+    digest_run.market_brief = await build_market_brief(
+        settings, get_provider(settings), memory.previously_reported("PIYASA")
+    )
+    calendar = _calendar_section(memory)
+    if calendar:
+        digest_run.market_brief.append(calendar)
 
     for ticker in settings.active_bist_tickers:
         try:
@@ -218,9 +261,12 @@ async def run_pipeline(memory: DigestMemory | None = None) -> DigestRun:
             logger.error("Ticker %s failed entirely: %s", ticker.symbol, exc, exc_info=True)
             digest_run.add_error("pipeline", ticker.symbol, str(exc))
 
-    digest_run.headline = await get_provider(settings).pick_headline(_headline_candidates(digest_run))
-    if digest_run.headline:
-        digest_run.headline = turkish_numbers(digest_run.headline)
+    candidates = _headline_candidates(digest_run)
+    headline = await get_provider(settings).pick_headline(candidates)
+    if headline:
+        # The subject may only use what the (checked) items say.
+        headline = check_line(standard_units(turkish_numbers(headline)), "\n".join(candidates), "Konu başlığı")
+    digest_run.headline = fit_headline(headline) if headline else None
     logger.info("Konu başlığı: %s", digest_run.headline)
     return digest_run
 
@@ -230,7 +276,9 @@ def _headline_candidates(digest_run: DigestRun) -> list[str]:
     for report in digest_run.company_reports:
         for _, sections in report.ordered_sections():
             candidates += [f"{report.ticker} — {s.subheading}: {s.narrative.split(chr(10))[0][:220]}" for s in sections]
-    candidates += [f"Piyasa — {s.subheading}: {s.narrative[:200]}" for s in digest_run.market_brief]
+    candidates += [
+        f"Piyasa — {s.subheading}: {s.narrative[:200]}" for s in digest_run.market_brief if s.subheading != "Şirket takvimi"
+    ]
     return candidates
 
 
@@ -271,10 +319,15 @@ def render_digest_text(digest_run: DigestRun) -> str:
     return "\n".join(lines)
 
 
-def render_digest_html(digest_run: DigestRun) -> str:
+def render_digest_html(digest_run: DigestRun, feedback_to: str | None = None) -> str:
+    """`feedback_to`: the address the "yanlış / gereksiz" links write to
+    (utils/feedback.py); without it the links are left out."""
     env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
     template = env.get_template("email_base.html")
-    return template.render(digest_run=digest_run, colors=template_colors())
+    return template.render(
+        digest_run=digest_run, colors=template_colors(), feedback_to=feedback_to,
+        feedback=lambda *args: feedback_link(feedback_to, *args),
+    )
 
 
 if __name__ == "__main__":
@@ -292,7 +345,7 @@ if __name__ == "__main__":
         (OUTPUT_DIR / "SKIPPED_NO_KAP").write_text("KAP unreachable; left for the next trigger.\n", encoding="utf-8")
         print("KAP'a ulaşılamadı ve REQUIRE_KAP=true: mail gönderilmedi, sonraki tetikleme deneyecek.")
         raise SystemExit(0)
-    rendered_html = render_digest_html(result)
+    rendered_html = render_digest_html(result, feedback_to=(settings.yaml.recipients or [None])[0])
     rendered_text = render_digest_text(result)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

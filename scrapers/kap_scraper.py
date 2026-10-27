@@ -72,6 +72,10 @@ LOOKBACK_DAYS = 2
 # whose whole content is "Yatırımcı sunumumuz ekte sunulmuştur", or one about
 # a presentation/report/results whatever its text.
 _ATTACHMENT_LINK = re.compile(r"/tr/api/file/download/[a-f0-9]{32}")
+# No attachment was read in the first 13 days (2026-10-15..27), not even on
+# filings that announce one; the link may be written differently (escaped
+# in the page's JSON, another path). Anything that looks like a file link.
+_ANY_FILE_LINK = re.compile(r"(?:https?:)?/[^\s\"'<>]*?(?:file/download|/api/file|\.pdf)[^\s\"'<>]*", re.IGNORECASE)
 # Link from a filing to the company's KAP page, which lists its website
 # (used to find the investor-relations site, scrapers/ir_scraper.py).
 _COMPANY_PAGE = re.compile(r"/tr/sirket-bilgileri/(?:ozet|genel)/[\w-]+")
@@ -157,9 +161,16 @@ class KapScraper(BaseScraper):
 
     async def _attachment_text(self, host: str, html: str) -> str | None:
         match = _ATTACHMENT_LINK.search(html)
-        if not match:
-            return None
-        url = f"{host}{match.group(0)}"
+        if match:
+            url = f"{host}{match.group(0)}"
+        else:
+            other = _ANY_FILE_LINK.search(html.replace("\\/", "/"))
+            if not other:
+                logger.info("KAP: bildirimde ek linki bulunamadı (sayfada 'download' geçiyor mu: %s)", "download" in html)
+                return None
+            path = other.group(0).replace("\\/", "/")
+            url = path if path.startswith("http") else f"{host}{path if path.startswith('/') else '/' + path}"
+            logger.info("KAP: ek linki standart dışı biçimde bulundu: %s", url[:160])
         try:
             response = await self._get(url, headers=dict(BROWSER_HEADERS))
             response.raise_for_status()
