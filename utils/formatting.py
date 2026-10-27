@@ -72,8 +72,19 @@ _BROKER_LABEL = re.compile(r"yatırım|menkul|securities|research")
 _REPORT_WORDS = re.compile(r"rapor|bülten|tahmin|hedef fiyat|tavsiye|analiz")
 
 
+# A CNBC interview went out as "Analist raporu" (KCHOL, 2026-10-15); a
+# syndicated loan as "Yeni iş" (AKBNK, 2026-10-27).
+_INTERVIEW_TEXT = re.compile(r"röportaj|cnbc|bloomberg|demeç|söyle(di|şi)|açıklamalarda bulundu|konuştu|savundu")
+_SYNDICATION_TEXT = re.compile(r"sendikasyon|seküritizasyon|eurobond|tahvil")
+
+
 def canonical_label(label: str, narrative: str) -> str:
     key = _label_key(label)
+    text = narrative.lower()
+    if key.startswith("analist") and _INTERVIEW_TEXT.search(text) and not re.search(r"rapor|tahmin|hedef fiyat", text):
+        return "Röportaj"
+    if key == "yeni iş" and _SYNDICATION_TEXT.search(text):
+        return "Borçlanma"
     if _BROKER_LABEL.search(key) and _REPORT_WORDS.search(narrative.lower()):
         return "Analist raporu"
     for pattern, canonical in _LABEL_ALIASES:
@@ -95,11 +106,41 @@ _META_SENTENCE = re.compile(
 )
 
 
+# "(Kaynak 2)" — the model citing its numbered inputs in the text (2026-10-16).
+_SOURCE_REF = re.compile(r"\s*\((?:kaynak|haber)\s*\d+(?:\s*[,ve-]+\s*\d+)*\)", re.IGNORECASE)
+# One unit style: "mlrd", "Milyar", "mln" all appeared in subjects.
+_UNIT_WORDS = (
+    (re.compile(r"(\d) ?(?:milyar|mlrd|mrd)\b", re.IGNORECASE), r"\1 mlr"),
+    (re.compile(r"(\d) ?(?:milyon|mln)\b", re.IGNORECASE), r"\1 mn"),
+)
+# "5 milyar 102 milyon 800 bin TL" -> "5,1 mlr TL"
+_WRITTEN_AMOUNT = re.compile(
+    r"(\d+)\s+(milyar|milyon)(?:\s+(\d+)\s+(milyon|bin))(?:\s+(\d+)\s+(bin))?(?:\s+(\d+))?(?=\s|$|[.,;])",
+    re.IGNORECASE,
+)
+
+
+def standard_units(text: str) -> str:
+    def written(match: re.Match) -> str:
+        scales = {"milyar": 1e9, "milyon": 1e6, "bin": 1e3}
+        groups = match.groups()
+        value = sum(float(a) * scales[u.lower()] for a, u in zip(groups[0:6:2], groups[1:6:2]) if a and u)
+        value += float(groups[6] or 0)
+        return _abbreviate(int(value))
+
+    text = _WRITTEN_AMOUNT.sub(written, text)
+    for pattern, replacement in _UNIT_WORDS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 def clean_prose(text: str) -> str:
     text = text.replace("\u202f", " ").replace("\u00a0", " ")
+    text = _SOURCE_REF.sub("", text)
     text = _ISIN.sub("", text)
     text = _META_REMARK.sub("", text)
     text = _META_CLAUSE.sub("", text)
+    text = standard_units(text)
     text = re.sub(r"(\d) ?mrn\b", r"\1 mlr", text)  # "4 mrn USD"
     return _META_SENTENCE.sub("", text).strip()
 
@@ -251,3 +292,33 @@ def polish_report(report: SynthesizedCompanyReport, source_text: str | None = No
         if report.summary:
             report.summary = fix_year_ranges(report.summary, source_text)
     return report
+
+
+KISACA_MIN_SECTIONS = 2
+KISACA_MIN_WORDS = 60
+
+
+def keep_summary_only_when_useful(report: SynthesizedCompanyReport) -> SynthesizedCompanyReport:
+    """"Kısaca" repeated a single short item word for word (user feedback,
+    2026-10-27): it stays only over two or more items with real length."""
+    sections = [s for _, secs in report.ordered_sections() for s in secs]
+    words = sum(len(s.narrative.split()) for s in sections)
+    if len(sections) < KISACA_MIN_SECTIONS or words < KISACA_MIN_WORDS:
+        report.summary = None
+    return report
+
+
+HEADLINE_LIMIT = 70
+_TRAILING_JUNK = re.compile(r"[\s,;:–—-]+(ve|ile|için|da|de)?$", re.IGNORECASE)
+
+
+def fit_headline(headline: str, limit: int = HEADLINE_LIMIT) -> str:
+    """Cut at a word boundary, never mid-word ("…325 mn USD karşılığın")."""
+    headline = " ".join(headline.split()).rstrip(".")
+    if len(headline) <= limit:
+        return headline
+    cut = headline[:limit].rsplit(" ", 1)[0]
+    previous = None
+    while previous != cut:
+        previous, cut = cut, _TRAILING_JUNK.sub("", cut)
+    return cut

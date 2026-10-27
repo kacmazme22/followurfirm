@@ -62,3 +62,24 @@ def test_old_entries_pruned_and_round_trip(tmp_path):
     loaded = DigestMemory.load(path)
     assert loaded.last_sent_at == NOW
     assert [e["url"] for e in loaded.entries] == ["https://www.a.com/haber/1"]
+
+
+def test_previously_reported_and_calendar():
+    from datetime import date
+
+    memory = DigestMemory()
+    report = SynthesizedCompanyReport(ticker="AKBNK", company_name="Akbank")
+    item = _item("Akbank bilanço tarihini açıkladı ve 3. çeyrek sonuçları geliyor", "https://a.com/1")
+    report.sections_by_category = {item.category: [SynthesizedSection(
+        subheading="Bilanço tarihi", narrative="Akbank 3. çeyrek sonuçlarını 27 Ekim 2026'da açıklayacak.", source_urls=[])]}
+    run = DigestRun(company_reports=[report], market_brief=[SynthesizedSection(
+        subheading="Faiz", narrative="TCMB'den 100 bp indirim beklentisi.", source_urls=[])])
+    memory.record(run, now=NOW)  # 15 Oct
+
+    assert memory.previously_reported("AKBNK", date(2026, 10, 16)) == [
+        "15.10 Bilanço tarihi: Akbank 3. çeyrek sonuçlarını 27 Ekim 2026'da açıklayacak."
+    ]
+    assert memory.previously_reported("PIYASA", date(2026, 10, 16)) == ["15.10 Faiz: TCMB'den 100 bp indirim beklentisi."]
+    assert memory.previously_reported("AKBNK", date(2026, 10, 23)) == []  # older than 7 days
+    assert [e["date"] for e in memory.upcoming(date(2026, 10, 27))] == ["2026-10-27"]
+    assert memory.upcoming(date(2026, 10, 15), days=7) == []

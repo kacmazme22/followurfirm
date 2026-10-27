@@ -33,6 +33,7 @@ from scrapers.bing_news_scraper import feed_url as bing_feed_url
 from scrapers.google_news_scraper import GOOGLE_NEWS_RSS_BASE, GoogleNewsScraper
 from scrapers.models import NewsItem, SynthesizedSection
 from utils.audit import log_inputs, log_outputs
+from utils.factcheck import check_sections
 from utils.formatting import polish_sections
 
 logger = logging.getLogger(__name__)
@@ -179,7 +180,25 @@ def _fix_index_change_labels(sections: list[SynthesizedSection], headlines: list
             section.subheading = "Dünkü seans"
 
 
-async def build_market_brief(settings: AppConfig, provider: SummarizerProvider) -> list[SynthesizedSection]:
+# "TCMB Politika Faizi Kararı Açıklandı" (2026-10-27): the headline was all
+# the model had, and the bullet said nothing — not even the rate.
+_CONTENT_FREE = re.compile(r"(açıklandı|belli oldu|netleşti|açıklayacak|açıklanacak|bekleniyor|gündemde)\.?$", re.IGNORECASE)
+
+
+def _drop_content_free(sections: list[SynthesizedSection]) -> list[SynthesizedSection]:
+    kept = []
+    for section in sections:
+        text = section.narrative.strip()
+        if not re.search(r"\d", text) and _CONTENT_FREE.search(text):
+            logger.info("Piyasa gündemi: bilgi içermeyen madde çıkarıldı: %s: %s", section.subheading, text)
+            continue
+        kept.append(section)
+    return kept
+
+
+async def build_market_brief(
+    settings: AppConfig, provider: SummarizerProvider, previously_reported: list[str] | None = None
+) -> list[SynthesizedSection]:
     if not settings.yaml.sources.market_brief.enabled:
         return []
     try:
@@ -187,13 +206,15 @@ async def build_market_brief(settings: AppConfig, provider: SummarizerProvider) 
         if not headlines:
             return []
         log_inputs("PIYASA", headlines)
-        sections = await provider.summarize_market(headlines)
+        sections = await provider.summarize_market(headlines, previously_reported)
         # One market item came back with six near-identical Google links.
         for section in sections:
             section.source_urls = section.source_urls[:MAX_LINKS_PER_ITEM]
         _fix_index_change_labels(sections, headlines)
         sections = polish_sections(sections)
         _keep_index_close_only(sections)
+        source_text = " ".join(f"{h.title} {h.body_snippet or ''}" for h in headlines)
+        sections = _drop_content_free(check_sections(sections, source_text, "PIYASA"))
         log_outputs("PIYASA", sections, headlines)
         return sections
     except Exception as exc:  # the box is optional; never sink the digest

@@ -59,6 +59,11 @@
           <a href="{{ u }}" style="font-family:{{ colors.SANS }}; font-size:11px; color:{{ colors.C.cognac }}; text-decoration:none; white-space:nowrap;">{% if 'kap.org.tr' in u %}KAP{% elif 'bigpara' in u %}Bigpara{% else %}Haber{% endif %}&nbsp;&rarr;</a>{% if not loop.last %}<span style="color:{{ colors.C.border }}; margin:0 5px;">&middot;</span>{% endif %}
           {% endfor %}
         {%- endmacro %}
+        {% macro feedback_links(key, section) -%}
+          {% if feedback_to %}{% set day = digest_run.run_date.strftime('%d.%m.%Y') %}
+          <span style="font-family:{{ colors.SANS }}; font-size:10px; color:{{ colors.C.sepia }}; white-space:nowrap; margin-left:6px;"><a href="{{ feedback('yanlis', day, key, section.subheading, section.narrative) }}" style="color:{{ colors.C.sepia }}; text-decoration:none;">yanlış</a> &middot; <a href="{{ feedback('gereksiz', day, key, section.subheading, section.narrative) }}" style="color:{{ colors.C.sepia }}; text-decoration:none;">gereksiz</a></span>
+          {% endif %}
+        {%- endmacro %}
         {% if digest_run.market_brief %}
         <tr>
           <td style="padding:24px 36px 4px;">
@@ -66,7 +71,7 @@
               <div style="font-family:{{ colors.SANS }}; font-size:11px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:{{ colors.C.ink }}; padding-bottom:8px;">Piyasa Gündemi</div>
               {% for section in digest_run.market_brief %}
               <div style="font-family:{{ colors.SANS }}; font-size:13px; color:{{ colors.C.ink }}; line-height:1.5; padding:4px 0;">
-                <b>{{ section.subheading }}.</b> {{ section.narrative }} {{ source_links(section.source_urls) }}
+                <b>{{ section.subheading }}.</b> {{ section.narrative }} {{ source_links(section.source_urls) }}{{ feedback_links('PIYASA', section) }}
               </div>
               {% endfor %}
             </div>
@@ -114,7 +119,7 @@
                       {% for paragraph in paragraphs[1:] %}
                       <div style="margin-top:6px;">{{ paragraph }}</div>
                       {% endfor %}
-                      {% if section.source_urls %}<span style="margin-left:4px;">{{ source_links(section.source_urls) }}</span>{% endif %}
+                      {% if section.source_urls %}<span style="margin-left:4px;">{{ source_links(section.source_urls) }}</span>{% endif %}{{ feedback_links(report.ticker, section) }}
                     </td>
                   </tr>
                   {% endfor %}
@@ -141,7 +146,7 @@
             </div>
             {% endif %}
             <div style="font-family:{{ colors.SANS }}; font-size:11px; color:{{ colors.C.cognac }};">
-              FollowUrFirm &middot; {{ digest_run.run_date.strftime('%d.%m.%Y %H:%M') }} itibarıyla oluşturuldu.
+              FollowUrFirm &middot; {{ digest_run.run_date.strftime('%d.%m.%Y %H:%M') }} itibarıyla oluşturuldu.{% if feedback_to %} &middot; <a href="{{ feedback('not', digest_run.run_date.strftime('%d.%m.%Y'), 'Bülten') }}" style="color:{{ colors.C.cognac }};">Bülten hakkında not yaz</a>{% endif %}
             </div>
           </td>
         </tr>

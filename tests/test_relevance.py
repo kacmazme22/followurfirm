@@ -70,10 +70,23 @@ def test_clean_title_strips_bigpara_asterisks_and_wrapper():
 @pytest.mark.parametrize("title", [
     "YEO TEKNOLOJI ENERJI (YEOTK) Hisse Senedi",
     "YEOTK Hisse Yorumları (YEO TEKNOLOJI ENERJI Güncel Yorumlar)",
-    "YEOTK MERKEZİ KAYIT KURULUŞU A.Ş. (Borsada İşlem Gören Tipe Dönüşüm Duyurusu)",
+    "Akbank T.A.Ş. (AKBNK)",
+    "Akbank QR çekiliş sonuçları 2026! Asil ve yedek kazananların tam isim listesi",
 ])
-def test_quote_pages_and_infra_notices_dropped(title):
+def test_quote_pages_and_lotteries_dropped(title):
     assert is_market_noise(title)
+
+
+@pytest.mark.parametrize("title", [
+    # The user counts these as news (2026-10-27): kept, labelled by the model.
+    "YEOTK MERKEZİ KAYIT KURULUŞU A.Ş. (Borsada İşlem Gören Tipe Dönüşüm Duyurusu)",
+    "KCHOL'de Global & BofA'dan Yüksek Hacimli Alımlar",
+    "BofA borsada alıma döndü: YKBNK ve KCHOL listenin başında",
+    "BofA’dan 3,5 milyar TL’lik alım: YKBNK ve AKBNK ilk sırada",
+    "Akbank, Migros ve Ülker’in paylarında dönüşüm başvurusu",
+])
+def test_broker_flow_and_share_conversions_kept(title):
+    assert not is_market_noise(title)
 
 
 def test_bigpara_analysis_bulletin_dropped_by_url():
@@ -226,12 +239,10 @@ def test_kap_form_rows_become_label_value_lines():
 
 
 @pytest.mark.parametrize("title", [
-    "KCHOL'de Global & BofA'dan Yüksek Hacimli Alımlar",
-    "BofA borsada alıma döndü: YKBNK ve KCHOL listenin başında",
     "Emanet Koç Holding hisselerinde 1,4 milyarlık sır! 36 yıl sonra ortaya çıktı",
     "Koç Holding hisselerinin peşinde 33 yıl! Servetin değeri...",
 ])
-def test_broker_flow_and_wealth_trivia_dropped(title):
+def test_wealth_trivia_dropped(title):
     assert is_market_noise(title)
 
 
@@ -492,3 +503,48 @@ def test_listing_pages_across_www_redirect():
 
     menu = '<a href="https://yeo.com.tr/sunumlar-ve-raporlar/">Sunumlar ve Raporlar</a><a href="https://yeo.com.tr/hakkimizda/">Hakkımızda</a>'
     assert listing_pages(menu, "https://www.yeo.com.tr/") == ["https://yeo.com.tr/sunumlar-ve-raporlar/"]
+
+
+def test_interview_and_syndication_labels():
+    from utils.formatting import canonical_label
+
+    assert canonical_label("Analist raporu", "Koç Holding/Çakıroğlu, CNBC'ye AB kamu alımları hakkında açıklamalarda bulundu.") == "Röportaj"
+    assert canonical_label("Analist raporu", "İş Yatırım 3Ç kâr tahmini raporu yayımladı.") == "Analist raporu"
+    assert canonical_label("Yeni iş", "Akbank 372,5 mn USD sendikasyon kredisi sağladı.") == "Borçlanma"
+
+
+def test_company_website_from_kap_label():
+    from config.settings import TickerConfig
+    from scrapers.ir_scraper import company_website
+
+    rgyas = TickerConfig(symbol="RGYAS", name="Rönesans Gayrimenkul Yatırım")
+    html = '<div>Merkez Adresi</div><div>Ankara</div><div>İnternet Adresi</div><div>rgy.com.tr</div><a href="https://www.kap.org.tr">KAP</a>'
+    assert company_website(html, rgyas) == "https://rgy.com.tr/"
+    json_page = '{"internetAdresi":"www.rgy.com.tr","kapUrl":"https://www.kap.org.tr/x"}'
+    assert company_website(json_page, rgyas) == "https://www.rgy.com.tr/"
+
+
+def test_fact_check_drops_invented_amount():
+    from scrapers.models import SynthesizedSection
+    from utils.factcheck import check_line, check_sections
+
+    source = "Yeni Mağazacılık A.Ş.'ye 6,47 mn USD ilave ödeme. Toplam 91,95 milyon dolar. yüzde 57,12 hisse."
+    sections = check_sections([
+        SynthesizedSection(subheading="Satış", narrative="%57,12 hisse 325 mn USD'ye satıldı. İlave 6,47 mn USD ödendi; toplam yaklaşık 92 mn USD.", source_urls=[]),
+        SynthesizedSection(subheading="Uydurma", narrative="Şirket 1,2 mlr TL kâr açıkladı.", source_urls=[]),
+    ], source, "SAHOL")
+    assert [(s.subheading, s.narrative) for s in sections] == [("Satış", "İlave 6,47 mn USD ödendi; toplam yaklaşık 92 mn USD.")]
+    assert check_line("SAHOL: CarrefourSA 325 mn USD'ye satıldı", source, "konu") is None
+    assert check_line("SAHOL: CarrefourSA için 92 mn USD ödendi", source, "konu")
+
+
+def test_summary_only_when_useful_and_headline_fit():
+    from config.constants import NewsCategory
+    from scrapers.models import SynthesizedCompanyReport, SynthesizedSection
+    from utils.formatting import fit_headline, keep_summary_only_when_useful
+
+    one = SynthesizedCompanyReport(ticker="X", company_name="X", summary="özet",
+                                   sections_by_category={list(NewsCategory)[0]: [SynthesizedSection(subheading="A", narrative="kısa", source_urls=[])]})
+    assert keep_summary_only_when_useful(one).summary is None
+    assert fit_headline("Sabancı Holding, CarrefourSA%57,12 ve Carrefour NL%32,16 hisselerini 325 mn USD karşılığında") == \
+        "Sabancı Holding, CarrefourSA%57,12 ve Carrefour NL%32,16 hisselerini"

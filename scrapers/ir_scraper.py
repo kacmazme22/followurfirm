@@ -61,6 +61,8 @@ REDISCOVER_DAYS = 30
 RETRY_DISCOVERY_DAYS = 7
 
 KAP_COMPANY_LIST = "/tr/bist-sirketler"
+# Bumped when discovery improves, so tickers it failed for are retried at once.
+DISCOVERY_VERSION = 2
 COMMON_IR_PATHS = ("/yatirimci-iliskileri", "/tr/yatirimci-iliskileri", "/yatirimci-iliskileri/", "/investor-relations")
 
 _DOCUMENT_LINK = re.compile(r"\.pdf(\?|$)|/detay/|/yil-liste/", re.IGNORECASE)
@@ -150,8 +152,34 @@ _SKIP_HOSTS = ("kap.org.tr", "mkk.com.tr", "borsaistanbul.com", "spk.gov.tr", "g
                "linkedin", "instagram", "youtube", "w3.org", "schema.org")
 
 
+_WEBSITE_LABEL = re.compile(r"nternet adres|web adres|web sitesi|\"(?:web|internet)\w*\"\s*:", re.IGNORECASE)
+_DOMAIN = re.compile(
+    r"(?:https?://)?(?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:com|net|org|gen|biz|info)(?:\.tr)?\b"
+    r"|(?:https?://)?(?:www\.)?[a-z0-9][a-z0-9-]*\.tr\b",
+    re.IGNORECASE,
+)
+
+
+def _labelled_website(html: str) -> str | None:
+    """The value right after KAP's "İnternet Adresi" label, whatever its
+    name: RGYAS's site is rgy.com.tr, which shares nothing with "Rönesans
+    Gayrimenkul Yatırım", so name matching alone missed it (2026-10-22)."""
+    for label in _WEBSITE_LABEL.finditer(html):
+        window = re.sub(r"<[^>]+>", " ", html[label.end(): label.end() + 600])
+        for match in _DOMAIN.finditer(window):
+            url = match.group(0)
+            url = url if url.lower().startswith("http") else f"https://{url}"
+            if not any(skip in urlparse(url).netloc.lower() for skip in _SKIP_HOSTS):
+                return f"{urlparse(url).scheme}://{urlparse(url).netloc}/"
+    return None
+
+
 def company_website(html: str, ticker: TickerConfig) -> str | None:
-    """The company's site among the URLs on its KAP page ("İnternet Adresi")."""
+    """The company's site on its KAP page: the "İnternet Adresi" value, or
+    else a URL whose domain carries part of the company's name."""
+    labelled = _labelled_website(html)
+    if labelled:
+        return labelled
     for url in _URL_IN_TEXT.findall(html):
         if not url.lower().startswith("http"):
             url = f"https://{url}"
@@ -237,13 +265,17 @@ class IrPageScraper(BaseScraper):
 
     async def _watched_pages(self) -> list[str]:
         known = self.memory.ir_pages.get(self.ticker.symbol)
+        if known and not known["pages"] and known.get("v") != DISCOVERY_VERSION:
+            known = None  # failed with an older discovery method: try the new one now
         if known and date.fromisoformat(known["checked_on"]) > date.today() - timedelta(
             days=REDISCOVER_DAYS if known["pages"] else RETRY_DISCOVERY_DAYS
         ):
             return known["pages"]
         pages = await self._discover()
         if pages or self.kap_company_url:
-            self.memory.ir_pages[self.ticker.symbol] = {"pages": pages, "checked_on": date.today().isoformat()}
+            self.memory.ir_pages[self.ticker.symbol] = {
+                "pages": pages, "checked_on": date.today().isoformat(), "v": DISCOVERY_VERSION,
+            }
         # else: no KAP filing to start from today; tried again on the next run
         return pages
 

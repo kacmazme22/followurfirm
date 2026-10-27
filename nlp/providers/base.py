@@ -32,7 +32,9 @@ class SummarizerProvider(ABC):
         email subject. Default: none (the plain subject is used)."""
         return None
 
-    async def summarize_market(self, headlines: list[NewsItem]) -> list[SynthesizedSection]:
+    async def summarize_market(
+        self, headlines: list[NewsItem], previously_reported: list[str] | None = None
+    ) -> list[SynthesizedSection]:
         """"Piyasa Gündemi" bullets from the day's market headlines. Default:
         none — without an LLM a raw headline dump is exactly the noise this
         box exists to avoid, so the section is simply left out."""
