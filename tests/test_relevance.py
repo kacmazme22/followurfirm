@@ -691,3 +691,31 @@ async def test_headline_with_no_recent_copy_anywhere_is_dropped():
     items = [old]
     await scraper.find_text_elsewhere(items)
     assert items == []
+
+
+
+async def test_only_same_site_copies_count_as_no_recent_copy(monkeypatch):
+    from config.constants import SourceType
+    from config.settings import GoogleNewsRssConfig, PolitenessConfig, TickerConfig
+    from scrapers import google_news_scraper as g
+    from scrapers.models import NewsItem
+
+    class Response:
+        text = ("<rss><channel><item><title>Akbank Düşünce Kulübü 10 yaşında - haber7</title>"
+                "<link>https://news.google.com/rss/articles/H</link></item></channel></rss>")
+
+    scraper = g.GoogleNewsScraper(TickerConfig(symbol="AKBNK", name="Akbank"), GoogleNewsRssConfig(), PolitenessConfig())
+
+    async def fake_get(url, **kwargs):
+        return Response()
+
+    async def fake_decode(urls):
+        return ["https://www.haber7.com/ekonomi/haber/2599130-akbank-dusunce-kulubu" for _ in urls]
+
+    scraper._get = fake_get
+    monkeypatch.setattr(g, "decode_google_urls", fake_decode)
+    item = NewsItem(ticker="AKBNK", title="Akbank Düşünce Kulübü 10 yaşında",
+                    url="https://m.haber7.com/ekonomi/haber/2599130-akbank-dusunce-kulubu-10-yasinda", source=SourceType.GOOGLE_NEWS)
+    items = [item]
+    await scraper.find_text_elsewhere(items)
+    assert items == []

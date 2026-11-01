@@ -37,7 +37,7 @@ from scrapers.base import BaseScraper
 from nlp.relevance import filter_relevant
 from scrapers.models import NewsItem, RawScrapedItem
 from utils.memory import kap_lookback_days, news_lookback_hours
-from utils.article_fetcher import StaleArticle, decode_google_urls, fetch_article_body, is_refusing
+from utils.article_fetcher import StaleArticle, decode_google_urls, fetch_article_body, is_refusing, site_of
 
 logger = logging.getLogger(__name__)
 
@@ -212,8 +212,17 @@ class GoogleNewsScraper(BaseScraper):
                 break
         if not candidates:
             return NO_RECENT_COPY
-        for publisher_url in await decode_google_urls(candidates):
-            if not publisher_url or publisher_url == str(item.url) or is_refusing(publisher_url):
+        decoded = [u for u in await decode_google_urls(candidates) if u]
+        # Copies on the item's own site don't count: Google re-dates a
+        # site's old pages in the search too (haber7's 2016 Akbank stories
+        # came back as "recent" copies of themselves, 2026-11-01). A story
+        # no other outlet carries is treated as having no recent copy.
+        own_site = site_of(str(item.url)) if "news.google.com" not in str(item.url) else None
+        independent = [u for u in decoded if site_of(u) != own_site]
+        if not independent:
+            return NO_RECENT_COPY
+        for publisher_url in independent:
+            if publisher_url == str(item.url) or is_refusing(publisher_url):
                 continue
             try:
                 body = await fetch_article_body(self, publisher_url, is_google_news=False, check_age=True)

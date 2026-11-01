@@ -274,8 +274,11 @@ RATE_LIMIT_WAIT_SECONDS = 8
 _REFUSING_HOSTS: set[str] = set()
 
 
-def _host(url: str) -> str:
+def site_of(url: str) -> str:
     return urlparse(url).netloc.lower().removeprefix("www.").removeprefix("m.")
+
+
+_host = site_of
 
 
 def is_refusing(url: str) -> bool:
