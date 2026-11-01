@@ -668,3 +668,26 @@ async def test_headline_found_on_another_outlet(monkeypatch):
     await scraper.find_text_elsewhere([item])
     assert str(item.url) == "https://www.borsagundem.com/b"
     assert "245 TL" in item.body_snippet
+
+
+
+async def test_headline_with_no_recent_copy_anywhere_is_dropped():
+    from config.constants import SourceType
+    from config.settings import GoogleNewsRssConfig, PolitenessConfig, TickerConfig
+    from scrapers import google_news_scraper as g
+    from scrapers.models import NewsItem
+
+    class Response:
+        text = "<rss><channel><item><title>Başka bir haber - x</title><link>https://news.google.com/rss/articles/C</link></item></channel></rss>"
+
+    scraper = g.GoogleNewsScraper(TickerConfig(symbol="AKBNK", name="Akbank"), GoogleNewsRssConfig(), PolitenessConfig())
+
+    async def fake_get(url, **kwargs):
+        return Response()
+
+    scraper._get = fake_get
+    old = NewsItem(ticker="AKBNK", title="Akbank Düşünce Kulübü 10 yaşında", url="https://news.google.com/rss/articles/Z",
+                   source=SourceType.GOOGLE_NEWS)
+    items = [old]
+    await scraper.find_text_elsewhere(items)
+    assert items == []

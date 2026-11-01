@@ -43,7 +43,8 @@ logger = logging.getLogger(__name__)
 
 GOOGLE_NEWS_RSS_BASE = "https://news.google.com/rss/search"
 # Looking for an unreadable story on other outlets (find_text_elsewhere).
-MAX_ALT_LOOKUPS_PER_TICKER = 6
+MAX_ALT_LOOKUPS_PER_TICKER = 10
+FOUND, UNREADABLE, NO_RECENT_COPY = "found", "unreadable", "no_recent_copy"
 ALT_QUERY_WORDS = 8
 ALT_TITLE_SIMILARITY = 80
 ALT_CANDIDATES = 4
@@ -172,19 +173,29 @@ class GoogleNewsScraper(BaseScraper):
         targets = [i for i in items if not i.body_snippet and i.source != SourceType.KAP][:MAX_ALT_LOOKUPS_PER_TICKER]
         if not targets:
             return
-        found = 0
+        found = stale = 0
         try:
             async with self._client_session():
                 for item in targets:
-                    found += await self._read_elsewhere(item)
+                    outcome = await self._read_elsewhere(item)
+                    found += outcome == FOUND
+                    if outcome == NO_RECENT_COPY and item.source == SourceType.GOOGLE_NEWS:
+                        # Not even the story itself is in Google's last 7
+                        # days: an old page the feed re-dated ("Akbank
+                        # Düşünce Kulübü 10 yaşında", 2026-11-01, from a site
+                        # that refused the page-date check).
+                        items.remove(item)
+                        stale += 1
+                        logger.info("%s: son 7 günde hiçbir kanalda yok, eski haber sayılıp çıkarıldı: %s",
+                                    self.ticker.symbol, item.title[:100])
         except Exception as exc:  # optional enrichment: never fails the ticker
             logger.warning("%s: başka kanalda arama durdu: %s", self.ticker.symbol, exc)
         logger.info(
-            "%s: metni alınamayan %d haberin %d tanesi başka bir kanalda bulundu",
-            self.ticker.symbol, len(targets), found,
+            "%s: metni alınamayan %d haberin %d tanesi başka bir kanalda bulundu, %d tanesi eski haber olarak çıkarıldı",
+            self.ticker.symbol, len(targets), found, stale,
         )
 
-    async def _read_elsewhere(self, item: NewsItem) -> int:
+    async def _read_elsewhere(self, item: NewsItem) -> str:
         words = re.sub(r"[^\w\s%,.]", " ", item.title).split()[:ALT_QUERY_WORDS]
         query = f"{' '.join(words)} when:7d"
         url = (
@@ -199,6 +210,8 @@ class GoogleNewsScraper(BaseScraper):
                 candidates.append(entry["link"])
             if len(candidates) >= ALT_CANDIDATES:
                 break
+        if not candidates:
+            return NO_RECENT_COPY
         for publisher_url in await decode_google_urls(candidates):
             if not publisher_url or publisher_url == str(item.url) or is_refusing(publisher_url):
                 continue
@@ -209,8 +222,8 @@ class GoogleNewsScraper(BaseScraper):
             if body:
                 item.body_snippet = body[:2000]
                 item.url = publisher_url
-                return 1
-        return 0
+                return FOUND
+        return UNREADABLE
 
     @staticmethod
     def _split_title_and_source(raw_title: str) -> tuple[str, str | None]:
