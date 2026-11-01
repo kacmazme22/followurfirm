@@ -195,7 +195,9 @@ NEWS_LOOKBACK_HOURS = 36
 # to the N most recent time-filtered items per ticker per source rather than
 # applied to every item.
 # ---------------------------------------------------------------------------
-MAX_ARTICLES_TO_ENRICH_PER_TICKER = 8
+# 8 until 2026-11-01; raised once Google links resolved (user: if items
+# still arrive without text, raise again — main.py logs how many do).
+MAX_ARTICLES_TO_ENRICH_PER_TICKER = 12
 
 # ---------------------------------------------------------------------------
 # Cross-source dedup priority (nlp/dedup.py): when the same story is reported

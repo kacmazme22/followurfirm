@@ -577,3 +577,145 @@ def test_company_named_only_in_the_text_is_kept():
     assert [i.raw_title for i in filter_relevant(items, rgyas)] == ["Maltepe Piazza AVM açıldı"]
     from utils.factcheck import source_numbers, unsourced
     assert unsourced("11,253 m² alanlı terminal", source_numbers("11.253 m² alan")) == []
+
+
+def test_google_decoder_result_shapes():
+    from utils.article_fetcher import _decoded_url
+
+    assert _decoded_url({"success": True, "decoded_url": "https://www.aa.com.tr/x"}) == "https://www.aa.com.tr/x"
+    assert _decoded_url({"status": True, "decoded_url": "https://www.aa.com.tr/x"}) == "https://www.aa.com.tr/x"
+    assert _decoded_url({"success": False, "message": "rate limited"}) is None
+    assert _decoded_url(None) is None
+
+
+async def test_article_fetch_retries_once_after_429(monkeypatch):
+    import httpx
+
+    from utils import article_fetcher
+
+    monkeypatch.setattr(article_fetcher, "RATE_LIMIT_WAIT_SECONDS", 0)
+    calls = []
+
+    async def get(url, headers=None):
+        calls.append(headers["User-Agent"][:7])
+        status = 429 if len(calls) == 1 else 200
+        return httpx.Response(status, headers={"retry-after": "0"}, request=httpx.Request("GET", url))
+
+    response = await article_fetcher._get_article(get, "https://m.haber7.com/x")
+    assert response.status_code == 200 and calls == ["Mozilla", "Mozilla"]
+    assert not article_fetcher.is_refusing("https://www.haber7.com/y")
+
+
+async def test_refusing_site_skipped_for_the_rest_of_the_run():
+    import httpx
+    import pytest
+
+    from utils import article_fetcher
+
+    article_fetcher._REFUSING_HOSTS.clear()
+
+    async def get(url, headers=None):
+        return httpx.Response(403, request=httpx.Request("GET", url))
+
+    await article_fetcher._get_article(get, "https://www.nefes.com.tr/a")
+    with pytest.raises(article_fetcher.SiteRefused):
+        await article_fetcher._get_article(get, "https://nefes.com.tr/b")
+    article_fetcher._REFUSING_HOSTS.clear()
+
+
+def test_stale_article_detected_from_page_date():
+    from utils.article_fetcher import article_is_stale
+
+    old = '<html><head><meta property="article:published_time" content="2016-03-01T10:00:00+03:00"></head><body><p>x</p></body></html>'
+    assert article_is_stale(old, "https://m.haber7.com/a")
+    assert not article_is_stale("<html><body><p>tarihsiz</p></body></html>", "https://a.com/b")
+
+
+async def test_headline_found_on_another_outlet(monkeypatch):
+    from config.constants import SourceType
+    from config.settings import GoogleNewsRssConfig, PolitenessConfig, TickerConfig
+    from scrapers import google_news_scraper as g
+    from scrapers.models import NewsItem
+
+    rss = """<rss><channel>
+    <item><title>KCHOL için 20 hedef fiyat verildi - nefes</title><link>https://news.google.com/rss/articles/A</link></item>
+    <item><title>KCHOL İçin 20 Hedef Fiyat Verildi! - borsagundem</title><link>https://news.google.com/rss/articles/B</link></item>
+    <item><title>Başka bir haber - x</title><link>https://news.google.com/rss/articles/C</link></item>
+    </channel></rss>"""
+
+    class Response:
+        text = rss
+
+    scraper = g.GoogleNewsScraper(TickerConfig(symbol="KCHOL", name="Koç Holding"), GoogleNewsRssConfig(), PolitenessConfig())
+
+    async def fake_get(url, **kwargs):
+        return Response()
+
+    publishers = {"https://news.google.com/rss/articles/A": "https://www.nefes.com.tr/a",
+                  "https://news.google.com/rss/articles/B": "https://www.borsagundem.com/b"}
+
+    async def fake_decode(urls):
+        return [publishers.get(u) for u in urls]
+
+    async def fake_body(scraper, url, is_google_news, check_age=False):
+        return None if "nefes" in url else "20 kurumun ortalama hedef fiyatı 245 TL, potansiyel %38."
+
+    scraper._get = fake_get
+    monkeypatch.setattr(g, "decode_google_urls", fake_decode)
+    monkeypatch.setattr(g, "fetch_article_body", fake_body)
+    item = NewsItem(ticker="KCHOL", title="3Ç26 Bilanço Tarihini Duyuran KCHOL İçin 20 Hedef Fiyat Verildi!",
+                    url="https://news.google.com/rss/articles/Z", source=SourceType.GOOGLE_NEWS)
+    await scraper.find_text_elsewhere([item])
+    assert str(item.url) == "https://www.borsagundem.com/b"
+    assert "245 TL" in item.body_snippet
+
+
+
+async def test_headline_with_no_recent_copy_anywhere_is_dropped():
+    from config.constants import SourceType
+    from config.settings import GoogleNewsRssConfig, PolitenessConfig, TickerConfig
+    from scrapers import google_news_scraper as g
+    from scrapers.models import NewsItem
+
+    class Response:
+        text = "<rss><channel><item><title>Başka bir haber - x</title><link>https://news.google.com/rss/articles/C</link></item></channel></rss>"
+
+    scraper = g.GoogleNewsScraper(TickerConfig(symbol="AKBNK", name="Akbank"), GoogleNewsRssConfig(), PolitenessConfig())
+
+    async def fake_get(url, **kwargs):
+        return Response()
+
+    scraper._get = fake_get
+    old = NewsItem(ticker="AKBNK", title="Akbank Düşünce Kulübü 10 yaşında", url="https://news.google.com/rss/articles/Z",
+                   source=SourceType.GOOGLE_NEWS)
+    items = [old]
+    await scraper.find_text_elsewhere(items)
+    assert items == []
+
+
+
+async def test_only_same_site_copies_count_as_no_recent_copy(monkeypatch):
+    from config.constants import SourceType
+    from config.settings import GoogleNewsRssConfig, PolitenessConfig, TickerConfig
+    from scrapers import google_news_scraper as g
+    from scrapers.models import NewsItem
+
+    class Response:
+        text = ("<rss><channel><item><title>Akbank Düşünce Kulübü 10 yaşında - haber7</title>"
+                "<link>https://news.google.com/rss/articles/H</link></item></channel></rss>")
+
+    scraper = g.GoogleNewsScraper(TickerConfig(symbol="AKBNK", name="Akbank"), GoogleNewsRssConfig(), PolitenessConfig())
+
+    async def fake_get(url, **kwargs):
+        return Response()
+
+    async def fake_decode(urls):
+        return ["https://www.haber7.com/ekonomi/haber/2599130-akbank-dusunce-kulubu" for _ in urls]
+
+    scraper._get = fake_get
+    monkeypatch.setattr(g, "decode_google_urls", fake_decode)
+    item = NewsItem(ticker="AKBNK", title="Akbank Düşünce Kulübü 10 yaşında",
+                    url="https://m.haber7.com/ekonomi/haber/2599130-akbank-dusunce-kulubu-10-yasinda", source=SourceType.GOOGLE_NEWS)
+    items = [item]
+    await scraper.find_text_elsewhere(items)
+    assert items == []

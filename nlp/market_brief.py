@@ -33,6 +33,7 @@ from scrapers.bing_news_scraper import feed_url as bing_feed_url
 from scrapers.google_news_scraper import GOOGLE_NEWS_RSS_BASE, GoogleNewsScraper
 from scrapers.models import NewsItem, SynthesizedSection
 from utils.audit import log_inputs, log_outputs
+from utils.article_fetcher import decode_google_urls, fetch_text
 from utils.factcheck import check_sections
 from utils.formatting import polish_sections
 
@@ -47,6 +48,10 @@ QUERY_SPACING_SECONDS = 2.0
 # 2026-10-06; every query now gets a fair share.
 MAX_HEADLINES_PER_QUERY = 4  # per source (Bing, Google) per query
 MAX_SUMMARY_CHARS = 300
+# Decoded Google articles: a longer excerpt (the decision text, the figures)
+# within Groq's per-minute token limit for the market call.
+MAX_GOOGLE_TEXTS = 8
+MAX_FETCHED_CHARS = 500
 
 _TR_MONTHS = ["ocak", "şubat", "mart", "nisan", "mayıs", "haziran", "temmuz",
               "ağustos", "eylül", "ekim", "kasım", "aralık"]
@@ -85,6 +90,27 @@ async def _get_feed(client: httpx.AsyncClient, url: str, query: str) -> httpx.Re
                 "Piyasa gündemi sorgusu başarısız (%s, deneme %d/2): %s: %s", query, attempt, type(exc).__name__, exc
             )
     return None
+
+
+async def _fill_google_texts(client: httpx.AsyncClient, headlines: list[NewsItem]) -> None:
+    """Article text for headline-only Google items. On 2026-10-27 the box
+    said only "TCMB Politika Faizi Kararı Açıklandı" because the headline
+    was all there was; the article had the rate and the statement."""
+    targets = [h for h in headlines if h.source == SourceType.GOOGLE_NEWS and not h.body_snippet][:MAX_GOOGLE_TEXTS]
+    decoded = await decode_google_urls([str(h.url) for h in targets])
+    filled = 0
+    for item, publisher_url in zip(targets, decoded):
+        if not publisher_url:
+            continue
+        text = await fetch_text(client, publisher_url)
+        index = headlines.index(item)
+        headlines[index] = item.model_copy(update={
+            "url": publisher_url,
+            "body_snippet": " ".join(text.split())[:MAX_FETCHED_CHARS] if text else None,
+        })
+        filled += bool(text)
+    if targets:
+        logger.info("Piyasa gündemi: yalnızca başlık olan %d Google haberinin %d tanesine metin alındı", len(targets), filled)
 
 
 async def fetch_market_headlines(settings: AppConfig) -> list[NewsItem]:
@@ -141,6 +167,8 @@ async def fetch_market_headlines(settings: AppConfig) -> list[NewsItem]:
                     taken += added
                     if taken >= MAX_HEADLINES_PER_QUERY:
                         break
+
+        await _fill_google_texts(client, headlines)
 
     logger.info(
         "Piyasa gündemi: %d başlık toplandı (%d tanesi özetli)",

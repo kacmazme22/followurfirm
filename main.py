@@ -156,8 +156,15 @@ async def _build_company_report(
     raw_items = _drop_mirrored_filings(raw_items, ticker.symbol)
     news_items = categorize_batch(raw_items)  # boilerplate items already dropped (None -> skipped)
     news_items = deduplicate(news_items)
+    # Headline-only items: the same story on another outlet (Google News
+    # search), then Bing; the bare headline is the last resort.
+    await GoogleNewsScraper(
+        ticker, settings.yaml.sources.google_news_rss, _GOOGLE_NEWS_POLITENESS
+    ).find_text_elsewhere(news_items)
     if settings.yaml.sources.bing_news.enabled:
         await BingNewsScraper(ticker, settings.yaml.sources.bing_news, _GOOGLE_NEWS_POLITENESS).fill_headline_only(news_items)
+    headline_only = sum(1 for i in news_items if not i.body_snippet)
+    logger.info("%s: %d haberin %d tanesi yalnızca başlıkla kaldı", ticker.symbol, len(news_items), headline_only)
     news_items = memory.drop_reported(news_items, ticker.symbol)
     for item in news_items:
         if item.source != SourceType.KAP:

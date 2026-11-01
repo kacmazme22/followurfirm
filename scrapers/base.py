@@ -136,7 +136,8 @@ class BaseScraper(ABC):
         kwargs.setdefault("follow_redirects", True)
 
         response = await self._client.request(method, url, headers=headers, **kwargs)
-        self._cache[cache_key] = response
+        if response.status_code != 429:  # a rate limit is retried, not remembered
+            self._cache[cache_key] = response
         return response
 
     async def _sleep_politely(self) -> None:

@@ -79,7 +79,9 @@ sources:
     # Name OR ticker: requiring both found nothing for RGYAS on 4 of 5 days
     # (2026-10-28..11-01) — headlines say "Rönesans Gayrimenkul" without the
     # ticker, or "RGYAS" without the full name.
-    query_template_tr: '"{company_name}" OR {ticker} when:2d'
+    # The parentheses matter: without them Google read it as
+    # name OR (ticker when:2d) and returned 2016 articles (2026-11-01).
+    query_template_tr: '("{company_name}" OR {ticker}) when:2d'
     language: "tr"
     country: "TR"
 

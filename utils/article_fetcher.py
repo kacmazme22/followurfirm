@@ -23,8 +23,10 @@ title-only rendering, exactly like before this module existed.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 import logging
 import re
+from urllib.parse import urlparse
 
 import trafilatura
 from bs4 import BeautifulSoup
@@ -223,7 +225,130 @@ def structured_text(html: str, url: str) -> str | None:
     return clean_article_text(extracted) if extracted else None
 
 
-async def fetch_article_body(scraper: BaseScraper, url: str, is_google_news: bool) -> str | None:
+def _decoded_url(result: dict) -> str | None:
+    """googlenewsdecoder 0.2 answers {"success": True, "decoded_url": ...};
+    0.1 answered {"status": True, ...}. The check only knew "status", so
+    from the upgrade on every successfully decoded link was thrown away
+    and logged as "returned no URL ... None" (None: a success carries no
+    message) — every Google News item stayed a bare headline from
+    2026-10-05 to 2026-11-01."""
+    if not isinstance(result, dict):
+        return None
+    if not (result.get("success") or result.get("status")):
+        return None
+    url = result.get("decoded_url")
+    return url if isinstance(url, str) and url.startswith("http") else None
+
+
+async def decode_google_urls(urls: list[str]) -> list[str | None]:
+    """Publisher URLs for Google News links (None where it fails), decoded
+    in one batch: one page fetch per link, then a single POST to Google."""
+    if gnewsdecoder is None or not urls:
+        return [None] * len(urls)
+    try:
+        results = await asyncio.to_thread(gnewsdecoder, list(urls), interval=1)
+    except Exception as exc:
+        logger.info("Google News URL decode failed: %s: %s", type(exc).__name__, exc)
+        return [None] * len(urls)
+    decoded = [_decoded_url(r) for r in results]
+    for url, result, ok in zip(urls, results, decoded):
+        if not ok:
+            logger.info("Google News URL çözülemedi: %s: %s", url[:90], (result or {}).get("message"))
+    return decoded
+
+
+# Publisher sites answer a browser better than a bot: 403s (nefes.com.tr,
+# memurpostasi.com) and 429s (haber7.com, 11 articles on 2026-11-01) once
+# Google links started resolving.
+ARTICLE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.6",
+}
+RATE_LIMIT_WAIT_SECONDS = 8
+
+
+# Sites that refused this run (403, or 429 after the retry). The rest of
+# the run doesn't spend time on them: the same story is looked for on
+# another outlet instead (scrapers/google_news_scraper.py).
+_REFUSING_HOSTS: set[str] = set()
+
+
+def site_of(url: str) -> str:
+    return urlparse(url).netloc.lower().removeprefix("www.").removeprefix("m.")
+
+
+_host = site_of
+
+
+def is_refusing(url: str) -> bool:
+    return _host(url) in _REFUSING_HOSTS
+
+
+class SiteRefused(Exception):
+    pass
+
+
+async def _get_article(get, url: str):
+    """GET with browser headers; on 429 wait (Retry-After, at most 20 s) and
+    try once more. A site that refuses is remembered for the run."""
+    if is_refusing(url):
+        raise SiteRefused(f"{_host(url)} bu çalışmada erişimi reddetti, atlandı")
+    response = await _get_article_once(get, url)
+    if response.status_code in (403, 429):
+        _REFUSING_HOSTS.add(_host(url))
+    return response
+
+
+async def _get_article_once(get, url: str):
+    response = await get(url, headers=dict(ARTICLE_HEADERS))
+    if response.status_code == 429:
+        try:
+            wait = min(20, int(response.headers.get("retry-after", RATE_LIMIT_WAIT_SECONDS)))
+        except ValueError:
+            wait = RATE_LIMIT_WAIT_SECONDS
+        logger.info("429 (%s), %d sn bekleyip tekrar deneniyor", url[:80], wait)
+        await asyncio.sleep(wait)
+        response = await get(url, headers=dict(ARTICLE_HEADERS))
+    return response
+
+
+async def fetch_text(client, url: str) -> str | None:
+    """Article text for `url` with a plain httpx client (no scraper)."""
+    try:
+        response = await _get_article(client.get, url)
+        response.raise_for_status()
+    except Exception as exc:
+        logger.info("Article fetch failed for %s: %s", url, exc)
+        return None
+    if article_is_stale(response.text, str(response.url)):
+        logger.info("Eski haber (sayfa tarihi %d günden eski), atlandı: %s", STALE_ARTICLE_DAYS, url)
+        return None
+    text = structured_text(response.text, str(response.url))
+    return text[:MAX_BODY_SNIPPET_CHARS] if text else None
+
+
+STALE_ARTICLE_DAYS = 7
+
+
+def article_is_stale(html: str, url: str, days: int = STALE_ARTICLE_DAYS) -> bool:
+    """True when the page's own publication date is older than `days`.
+    Google's feed dates re-crawled pages as new: "İş adamı Mustafa Koç'un
+    vefatı" (2016) reached KCHOL's inputs on 2026-11-01."""
+    try:
+        metadata = trafilatura.extract_metadata(html, default_url=url)
+        published = getattr(metadata, "date", None) if metadata else None
+        if not published:
+            return False
+        published_date = datetime.strptime(published[:10], "%Y-%m-%d").date()
+    except Exception:
+        return False
+    return published_date < (datetime.now(timezone.utc) - timedelta(days=days)).date()
+
+
+async def fetch_article_body(
+    scraper: BaseScraper, url: str, is_google_news: bool, check_age: bool = False
+) -> str | None:
     """Fetches `url` (decoding it first if it's a Google News redirect
     token) and extracts the real article body via trafilatura. Uses
     `scraper._get()` so the fetch gets the same politeness delay, User-Agent,
@@ -235,26 +360,26 @@ async def fetch_article_body(scraper: BaseScraper, url: str, is_google_news: boo
     if is_google_news:
         if gnewsdecoder is None:
             return None
-        try:
-            decoded = await asyncio.to_thread(gnewsdecoder, url, interval=1)
-        except Exception as exc:
-            logger.info("Google News URL decode failed for %s: %s", url, exc)
+        target_url = (await decode_google_urls([url]))[0]
+        if not target_url:
             return None
-        if not decoded.get("status") or not decoded.get("decoded_url"):
-            logger.info(
-                "Google News URL decode returned no URL for %s: %s", url, decoded.get("message")
-            )
-            return None
-        target_url = decoded["decoded_url"]
 
     try:
-        response = await scraper._get(target_url)
+        response = await _get_article(scraper._get, target_url)
     except Exception as exc:
         logger.info("Article fetch failed for %s: %s", target_url, exc)
         return None
 
+    if check_age and article_is_stale(response.text, target_url):
+        logger.info("Eski haber (sayfa tarihi %d günden eski), atlandı: %s", STALE_ARTICLE_DAYS, target_url)
+        raise StaleArticle(target_url)
     text = structured_text(response.text, target_url)
     if not text:
         logger.info("No article text from %s (HTTP %s)", target_url, response.status_code)
         return None
     return text[:MAX_BODY_SNIPPET_CHARS]
+
+
+class StaleArticle(Exception):
+    """The article's own date is older than STALE_ARTICLE_DAYS: the item
+    is old news re-dated by the feed and must not reach the digest."""
