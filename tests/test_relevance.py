@@ -586,3 +586,20 @@ def test_google_decoder_result_shapes():
     assert _decoded_url({"status": True, "decoded_url": "https://www.aa.com.tr/x"}) == "https://www.aa.com.tr/x"
     assert _decoded_url({"success": False, "message": "rate limited"}) is None
     assert _decoded_url(None) is None
+
+
+async def test_article_fetch_retries_once_after_429(monkeypatch):
+    import httpx
+
+    from utils import article_fetcher
+
+    monkeypatch.setattr(article_fetcher, "RATE_LIMIT_WAIT_SECONDS", 0)
+    calls = []
+
+    async def get(url, headers=None):
+        calls.append(headers["User-Agent"][:7])
+        status = 429 if len(calls) == 1 else 200
+        return httpx.Response(status, headers={"retry-after": "0"}, request=httpx.Request("GET", url))
+
+    response = await article_fetcher._get_article(get, "https://m.haber7.com/x")
+    assert response.status_code == 200 and calls == ["Mozilla", "Mozilla"]

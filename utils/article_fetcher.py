@@ -255,10 +255,36 @@ async def decode_google_urls(urls: list[str]) -> list[str | None]:
     return decoded
 
 
+# Publisher sites answer a browser better than a bot: 403s (nefes.com.tr,
+# memurpostasi.com) and 429s (haber7.com, 11 articles on 2026-11-01) once
+# Google links started resolving.
+ARTICLE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.6",
+}
+RATE_LIMIT_WAIT_SECONDS = 8
+
+
+async def _get_article(get, url: str):
+    """GET with browser headers; on 429 wait (Retry-After, at most 20 s) and
+    try once more."""
+    response = await get(url, headers=dict(ARTICLE_HEADERS))
+    if response.status_code == 429:
+        try:
+            wait = min(20, int(response.headers.get("retry-after", RATE_LIMIT_WAIT_SECONDS)))
+        except ValueError:
+            wait = RATE_LIMIT_WAIT_SECONDS
+        logger.info("429 (%s), %d sn bekleyip tekrar deneniyor", url[:80], wait)
+        await asyncio.sleep(wait)
+        response = await get(url, headers=dict(ARTICLE_HEADERS))
+    return response
+
+
 async def fetch_text(client, url: str) -> str | None:
     """Article text for `url` with a plain httpx client (no scraper)."""
     try:
-        response = await client.get(url)
+        response = await _get_article(client.get, url)
         response.raise_for_status()
     except Exception as exc:
         logger.info("Article fetch failed for %s: %s", url, exc)
@@ -284,7 +310,7 @@ async def fetch_article_body(scraper: BaseScraper, url: str, is_google_news: boo
             return None
 
     try:
-        response = await scraper._get(target_url)
+        response = await _get_article(scraper._get, target_url)
     except Exception as exc:
         logger.info("Article fetch failed for %s: %s", target_url, exc)
         return None
