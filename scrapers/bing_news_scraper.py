@@ -30,7 +30,7 @@ from nlp.relevance import filter_relevant
 from scrapers.base import BaseScraper
 from scrapers.models import NewsItem, RawScrapedItem
 from utils.memory import news_lookback_hours
-from utils.article_fetcher import fetch_article_body
+from utils.article_fetcher import StaleArticle, fetch_article_body
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +157,10 @@ class BingNewsScraper(BaseScraper):
             url = real_article_url(best.get("link"))
             body = description_text(best)
             if url:
-                article = await fetch_article_body(self, url, is_google_news=False)
+                try:
+                    article = await fetch_article_body(self, url, is_google_news=False, check_age=True)
+                except StaleArticle:
+                    continue
                 if article and len(article) > len(body or ""):
                     body = article
                 item.url = url
@@ -173,7 +176,11 @@ class BingNewsScraper(BaseScraper):
         for item in items[:MAX_ARTICLES_TO_ENRICH_PER_TICKER]:
             if not item.raw_url:
                 continue
-            body = await fetch_article_body(self, item.raw_url, is_google_news=False)
+            try:
+                body = await fetch_article_body(self, item.raw_url, is_google_news=False, check_age=True)
+            except StaleArticle:
+                items.remove(item)
+                continue
             if body and len(body) > len(item.raw_body_snippet or ""):
                 item.raw_body_snippet = body
                 enriched += 1

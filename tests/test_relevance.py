@@ -603,3 +603,11 @@ async def test_article_fetch_retries_once_after_429(monkeypatch):
 
     response = await article_fetcher._get_article(get, "https://m.haber7.com/x")
     assert response.status_code == 200 and calls == ["Mozilla", "Mozilla"]
+
+
+def test_stale_article_detected_from_page_date():
+    from utils.article_fetcher import article_is_stale
+
+    old = '<html><head><meta property="article:published_time" content="2016-03-01T10:00:00+03:00"></head><body><p>x</p></body></html>'
+    assert article_is_stale(old, "https://m.haber7.com/a")
+    assert not article_is_stale("<html><body><p>tarihsiz</p></body></html>", "https://a.com/b")

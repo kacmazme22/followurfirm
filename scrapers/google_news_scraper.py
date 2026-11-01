@@ -35,7 +35,7 @@ from scrapers.base import BaseScraper
 from nlp.relevance import filter_relevant
 from scrapers.models import RawScrapedItem
 from utils.memory import kap_lookback_days, news_lookback_hours
-from utils.article_fetcher import decode_google_urls, fetch_article_body
+from utils.article_fetcher import StaleArticle, decode_google_urls, fetch_article_body
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +130,11 @@ class GoogleNewsScraper(BaseScraper):
             # a better link in the mail, and the same story from another
             # feed now has the same URL for dedup and the digest memory.
             item.raw_url = publisher_url
-            body = await fetch_article_body(self, publisher_url, is_google_news=False)
+            try:
+                body = await fetch_article_body(self, publisher_url, is_google_news=False, check_age=True)
+            except StaleArticle:
+                items.remove(item)
+                continue
             if body:
                 item.raw_body_snippet = body
                 enriched += 1

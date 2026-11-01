@@ -23,6 +23,7 @@ title-only rendering, exactly like before this module existed.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 import logging
 import re
 
@@ -289,11 +290,34 @@ async def fetch_text(client, url: str) -> str | None:
     except Exception as exc:
         logger.info("Article fetch failed for %s: %s", url, exc)
         return None
+    if article_is_stale(response.text, str(response.url)):
+        logger.info("Eski haber (sayfa tarihi %d günden eski), atlandı: %s", STALE_ARTICLE_DAYS, url)
+        return None
     text = structured_text(response.text, str(response.url))
     return text[:MAX_BODY_SNIPPET_CHARS] if text else None
 
 
-async def fetch_article_body(scraper: BaseScraper, url: str, is_google_news: bool) -> str | None:
+STALE_ARTICLE_DAYS = 7
+
+
+def article_is_stale(html: str, url: str, days: int = STALE_ARTICLE_DAYS) -> bool:
+    """True when the page's own publication date is older than `days`.
+    Google's feed dates re-crawled pages as new: "İş adamı Mustafa Koç'un
+    vefatı" (2016) reached KCHOL's inputs on 2026-11-01."""
+    try:
+        metadata = trafilatura.extract_metadata(html, default_url=url)
+        published = getattr(metadata, "date", None) if metadata else None
+        if not published:
+            return False
+        published_date = datetime.strptime(published[:10], "%Y-%m-%d").date()
+    except Exception:
+        return False
+    return published_date < (datetime.now(timezone.utc) - timedelta(days=days)).date()
+
+
+async def fetch_article_body(
+    scraper: BaseScraper, url: str, is_google_news: bool, check_age: bool = False
+) -> str | None:
     """Fetches `url` (decoding it first if it's a Google News redirect
     token) and extracts the real article body via trafilatura. Uses
     `scraper._get()` so the fetch gets the same politeness delay, User-Agent,
@@ -315,8 +339,16 @@ async def fetch_article_body(scraper: BaseScraper, url: str, is_google_news: boo
         logger.info("Article fetch failed for %s: %s", target_url, exc)
         return None
 
+    if check_age and article_is_stale(response.text, target_url):
+        logger.info("Eski haber (sayfa tarihi %d günden eski), atlandı: %s", STALE_ARTICLE_DAYS, target_url)
+        raise StaleArticle(target_url)
     text = structured_text(response.text, target_url)
     if not text:
         logger.info("No article text from %s (HTTP %s)", target_url, response.status_code)
         return None
     return text[:MAX_BODY_SNIPPET_CHARS]
+
+
+class StaleArticle(Exception):
+    """The article's own date is older than STALE_ARTICLE_DAYS: the item
+    is old news re-dated by the feed and must not reach the digest."""
