@@ -35,7 +35,7 @@ from scrapers.base import BaseScraper
 from nlp.relevance import filter_relevant
 from scrapers.models import RawScrapedItem
 from utils.memory import kap_lookback_days, news_lookback_hours
-from utils.article_fetcher import fetch_article_body
+from utils.article_fetcher import decode_google_urls, fetch_article_body
 
 logger = logging.getLogger(__name__)
 
@@ -120,10 +120,17 @@ class GoogleNewsScraper(BaseScraper):
         slice picks the most recent ones."""
         enriched = 0
         failed = 0
-        for item in items[:MAX_ARTICLES_TO_ENRICH_PER_TICKER]:
-            if not item.raw_url:
+        targets = [item for item in items[:MAX_ARTICLES_TO_ENRICH_PER_TICKER] if item.raw_url]
+        decoded = await decode_google_urls([item.raw_url for item in targets])
+        for item, publisher_url in zip(targets, decoded):
+            if not publisher_url:
+                failed += 1
                 continue
-            body = await fetch_article_body(self, item.raw_url, is_google_news=True)
+            # The publisher's link instead of a 250-character Google token:
+            # a better link in the mail, and the same story from another
+            # feed now has the same URL for dedup and the digest memory.
+            item.raw_url = publisher_url
+            body = await fetch_article_body(self, publisher_url, is_google_news=False)
             if body:
                 item.raw_body_snippet = body
                 enriched += 1

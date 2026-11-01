@@ -223,6 +223,50 @@ def structured_text(html: str, url: str) -> str | None:
     return clean_article_text(extracted) if extracted else None
 
 
+def _decoded_url(result: dict) -> str | None:
+    """googlenewsdecoder 0.2 answers {"success": True, "decoded_url": ...};
+    0.1 answered {"status": True, ...}. The check only knew "status", so
+    from the upgrade on every successfully decoded link was thrown away
+    and logged as "returned no URL ... None" (None: a success carries no
+    message) — every Google News item stayed a bare headline from
+    2026-10-05 to 2026-11-01."""
+    if not isinstance(result, dict):
+        return None
+    if not (result.get("success") or result.get("status")):
+        return None
+    url = result.get("decoded_url")
+    return url if isinstance(url, str) and url.startswith("http") else None
+
+
+async def decode_google_urls(urls: list[str]) -> list[str | None]:
+    """Publisher URLs for Google News links (None where it fails), decoded
+    in one batch: one page fetch per link, then a single POST to Google."""
+    if gnewsdecoder is None or not urls:
+        return [None] * len(urls)
+    try:
+        results = await asyncio.to_thread(gnewsdecoder, list(urls), interval=1)
+    except Exception as exc:
+        logger.info("Google News URL decode failed: %s: %s", type(exc).__name__, exc)
+        return [None] * len(urls)
+    decoded = [_decoded_url(r) for r in results]
+    for url, result, ok in zip(urls, results, decoded):
+        if not ok:
+            logger.info("Google News URL çözülemedi: %s: %s", url[:90], (result or {}).get("message"))
+    return decoded
+
+
+async def fetch_text(client, url: str) -> str | None:
+    """Article text for `url` with a plain httpx client (no scraper)."""
+    try:
+        response = await client.get(url)
+        response.raise_for_status()
+    except Exception as exc:
+        logger.info("Article fetch failed for %s: %s", url, exc)
+        return None
+    text = structured_text(response.text, str(response.url))
+    return text[:MAX_BODY_SNIPPET_CHARS] if text else None
+
+
 async def fetch_article_body(scraper: BaseScraper, url: str, is_google_news: bool) -> str | None:
     """Fetches `url` (decoding it first if it's a Google News redirect
     token) and extracts the real article body via trafilatura. Uses
@@ -235,17 +279,9 @@ async def fetch_article_body(scraper: BaseScraper, url: str, is_google_news: boo
     if is_google_news:
         if gnewsdecoder is None:
             return None
-        try:
-            decoded = await asyncio.to_thread(gnewsdecoder, url, interval=1)
-        except Exception as exc:
-            logger.info("Google News URL decode failed for %s: %s", url, exc)
+        target_url = (await decode_google_urls([url]))[0]
+        if not target_url:
             return None
-        if not decoded.get("status") or not decoded.get("decoded_url"):
-            logger.info(
-                "Google News URL decode returned no URL for %s: %s", url, decoded.get("message")
-            )
-            return None
-        target_url = decoded["decoded_url"]
 
     try:
         response = await scraper._get(target_url)

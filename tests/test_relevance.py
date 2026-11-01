@@ -577,3 +577,12 @@ def test_company_named_only_in_the_text_is_kept():
     assert [i.raw_title for i in filter_relevant(items, rgyas)] == ["Maltepe Piazza AVM açıldı"]
     from utils.factcheck import source_numbers, unsourced
     assert unsourced("11,253 m² alanlı terminal", source_numbers("11.253 m² alan")) == []
+
+
+def test_google_decoder_result_shapes():
+    from utils.article_fetcher import _decoded_url
+
+    assert _decoded_url({"success": True, "decoded_url": "https://www.aa.com.tr/x"}) == "https://www.aa.com.tr/x"
+    assert _decoded_url({"status": True, "decoded_url": "https://www.aa.com.tr/x"}) == "https://www.aa.com.tr/x"
+    assert _decoded_url({"success": False, "message": "rate limited"}) is None
+    assert _decoded_url(None) is None
