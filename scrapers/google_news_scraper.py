@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from urllib.parse import quote
 
 import feedparser
@@ -44,6 +45,13 @@ GOOGLE_NEWS_RSS_BASE = "https://news.google.com/rss/search"
 # Google News RSS titles are consistently "Headline - Source Name"; the
 # separator it uses to append the source name at the end of the title.
 _TITLE_SOURCE_SEPARATOR = " - "
+
+
+def _published_sort_key(item: RawScrapedItem) -> float:
+    try:
+        return parsedate_to_datetime(item.raw_published_at).timestamp() if item.raw_published_at else 0.0
+    except (TypeError, ValueError):
+        return 0.0
 
 
 class GoogleNewsScraper(BaseScraper):
@@ -108,6 +116,9 @@ class GoogleNewsScraper(BaseScraper):
         )
 
         items = filter_relevant(items, self.ticker)
+        # Google orders the feed by relevance; the article texts (and the
+        # page-date check against re-dated old pages) go to the newest first.
+        items.sort(key=_published_sort_key, reverse=True)
         await self._enrich_with_article_bodies(items)
         # An empty feed (0 results) is a normal outcome, not an error —
         # returning an empty list here, no exception.
