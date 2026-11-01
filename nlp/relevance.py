@@ -40,6 +40,7 @@ from scrapers.models import RawScrapedItem
 logger = logging.getLogger(__name__)
 
 MULTI_TICKER_RUN = 4
+BODY_CHARS_FOR_RELEVANCE = 400
 
 # 4-6 uppercase letters/digits as a standalone token: BIST ticker shape.
 _TICKER_TOKEN = r"[A-ZÇĞİÖŞÜ0-9]{4,6}"
@@ -192,7 +193,12 @@ def filter_relevant(items: list[RawScrapedItem], ticker: TickerConfig) -> list[R
             dropped_multi += 1
         elif is_market_noise(item.raw_title, item.raw_url):
             dropped_noise += 1
-        elif not _mentions_company(item.raw_title, keywords):
+        # The headline may name only a property or brand ("Maltepe Piazza
+        # AVM açıldı", a Rönesans GYO mall, 2026-11-01); the text names the
+        # company. Bing items carry a description, Bigpara a body.
+        elif not _mentions_company(item.raw_title, keywords) and not _mentions_company(
+            (item.raw_body_snippet or "")[:BODY_CHARS_FOR_RELEVANCE], keywords
+        ):
             dropped_unrelated += 1
             # Logged so a too-strict filter is visible in the Actions log
             # (KCHOL lost 21 of 26 Google items on 2026-10-13).
@@ -206,3 +212,46 @@ def filter_relevant(items: list[RawScrapedItem], ticker: TickerConfig) -> list[R
             ticker.symbol, dropped_multi, dropped_noise, dropped_unrelated,
         )
     return kept
+
+
+# Five capitals as a standalone word: the shape of most BIST tickers
+# (ASELS, AKBNK, GARAN). Common all-caps words that aren't tickers are skipped.
+_TICKER_WORD = re.compile(r"(?<![A-Za-zÇĞİÖŞÜçğıöşü0-9])([A-ZÇĞİÖŞÜ]{5})(?![A-Za-zÇĞİÖŞÜçğıöşü0-9])")
+_NOT_TICKERS = {"HEDEF", "FİYAT", "BORSA", "HİSSE", "ANALİ", "KÂRLI", "TÜFE", "BIST", "SPK", "BÜYÜK", "YÜZDE", "TAVSİ"}
+MIN_OTHER_TICKERS = 3
+
+
+def isolate_company_part(body: str | None, symbol: str) -> str | None:
+    """A multi-stock article ("9 Hissede Yeni Hedef Fiyatlar: ASELS, AKBNK
+    ve Diğerleri") is cut down to the part about `symbol`: from each
+    mention of the ticker to the next other ticker. On 2026-10-30 the whole
+    table went to AKBNK and the mail listed 36 target prices, most of them
+    other companies' (user feedback). With no mention of the ticker in the
+    body, the body is dropped and only the headline remains."""
+    if not body:
+        return body
+    marks = [(m.start(), m.group(1)) for m in _TICKER_WORD.finditer(body) if m.group(1) not in _NOT_TICKERS]
+    others = {t for _, t in marks if t != symbol}
+    if len(others) < MIN_OTHER_TICKERS:
+        return body
+    parts = []
+    for i, (start, ticker) in enumerate(marks):
+        if ticker != symbol:
+            continue
+        end = next((pos for pos, t in marks[i + 1:] if t != symbol), len(body))
+        parts.append(body[start:end].strip())
+    return " … ".join(parts) or None
+
+
+_MULTI_STOCK_TITLE = re.compile(r"\b\d+\s+(hisse|şirket|banka)|ve diğerleri|hisseler için", re.IGNORECASE)
+
+
+def company_body(title: str, body: str | None, symbol: str) -> str | None:
+    """isolate_company_part(), plus: when the headline says the article is
+    about several stocks but the body can't be split by ticker (tables
+    whose rows carry no ticker), the body is dropped rather than handing
+    the model other companies' figures."""
+    isolated = isolate_company_part(body, symbol)
+    if isolated == body and body and _MULTI_STOCK_TITLE.search(title):
+        return None
+    return isolated

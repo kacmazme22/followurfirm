@@ -549,3 +549,31 @@ def test_summary_only_when_useful_and_headline_fit():
     assert keep_summary_only_when_useful(one).summary is None
     assert fit_headline("Sabancı Holding, CarrefourSA%57,12 ve Carrefour NL%32,16 hisselerini 325 mn USD karşılığında") == \
         "Sabancı Holding, CarrefourSA%57,12 ve Carrefour NL%32,16 hisselerini"
+
+
+def test_multi_stock_articles_cut_to_the_company():
+    from nlp.relevance import company_body
+
+    table = "Aracı Kurum: Hedef fiyat | Şeker Yatırım: 495,00 TL | Phillip Capital: 565,00 TL | Garanti BBVA: 96,00 TL"
+    assert company_body("9 Hissede Yeni Hedef Fiyatlar Açıklandı: ASELS, AKBNK Ve Diğerleri", table, "AKBNK") is None
+    split = "ASELS Şeker 495 TL. AKBNK Garanti 96 TL, YKY 88 TL. THYAO İş 535 TL. GARAN Vakıf 180 TL."
+    assert company_body("9 hissede hedef fiyat", split, "AKBNK") == "AKBNK Garanti 96 TL, YKY 88 TL."
+    assert company_body("Akbank 11,6 mlr TL kâr açıkladı", "Akbank 11,6 mlr TL net kâr.", "AKBNK") == "Akbank 11,6 mlr TL net kâr."
+
+
+def test_company_named_only_in_the_text_is_kept():
+    from config.constants import SourceType
+    from config.settings import TickerConfig
+    from nlp.relevance import filter_relevant
+    from scrapers.models import RawScrapedItem
+
+    rgyas = TickerConfig(symbol="RGYAS", name="Rönesans Gayrimenkul Yatırım")
+    items = [
+        RawScrapedItem(source=SourceType.BING_NEWS, ticker="RGYAS", raw_title="Maltepe Piazza AVM açıldı",
+                       raw_body_snippet="Rönesans Gayrimenkul Yatırım'ın yeni AVM'si Maltepe Piazza kapılarını açtı."),
+        RawScrapedItem(source=SourceType.BING_NEWS, ticker="RGYAS", raw_title="Bu hafta bilanço açıklayacak şirketler",
+                       raw_body_snippet="34 şirket bu hafta sonuç açıklayacak."),
+    ]
+    assert [i.raw_title for i in filter_relevant(items, rgyas)] == ["Maltepe Piazza AVM açıldı"]
+    from utils.factcheck import source_numbers, unsourced
+    assert unsourced("11,253 m² alanlı terminal", source_numbers("11.253 m² alan")) == []

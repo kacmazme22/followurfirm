@@ -179,6 +179,33 @@ def _label_key(label: str) -> str:
     return " ".join(label.lower().replace("i̇", "i").rstrip(".").split())
 
 
+REDUNDANT_SIMILARITY = 60
+
+
+def _append_paragraphs(existing: str, addition: str) -> str:
+    """Adds `addition`'s paragraphs except those that only restate what is
+    already there: same words, no figure of their own. On 2026-10-28
+    AKBNK's results item said "9 aylık kâr %18 arttı" three times over,
+    one paragraph per news site."""
+    from rapidfuzz import fuzz
+
+    from utils.factcheck import source_numbers, unsourced
+
+    from utils.factcheck import _amounts
+
+    result = existing
+    for paragraph in addition.split(PARAGRAPH_SEPARATOR):
+        known = source_numbers(result)
+        figures = _amounts(paragraph, checkable_only=True)
+        new_figures = unsourced(paragraph, known)
+        if figures and not new_figures:
+            continue  # only figures already given
+        if not figures and fuzz.token_set_ratio(paragraph.lower(), result.lower()) >= REDUNDANT_SIMILARITY:
+            continue
+        result += PARAGRAPH_SEPARATOR + paragraph
+    return result
+
+
 def merge_same_label(sections: list[SynthesizedSection]) -> list[SynthesizedSection]:
     """Sections with the same label become one: narratives as paragraphs,
     links merged (order kept)."""
@@ -190,7 +217,7 @@ def merge_same_label(sections: list[SynthesizedSection]) -> list[SynthesizedSect
             continue
         target = merged[key]
         urls = list(target.source_urls) + [u for u in section.source_urls if u not in target.source_urls]
-        target.narrative = target.narrative + PARAGRAPH_SEPARATOR + section.narrative
+        target.narrative = _append_paragraphs(target.narrative, section.narrative)
         target.source_urls = urls
     return list(merged.values())
 
@@ -275,7 +302,7 @@ def polish_report(report: SynthesizedCompanyReport, source_text: str | None = No
             key = _label_key(section.subheading)
             if key in seen:
                 first = seen[key]
-                first.narrative += PARAGRAPH_SEPARATOR + section.narrative
+                first.narrative = _append_paragraphs(first.narrative, section.narrative)
                 first.source_urls = list(first.source_urls) + [u for u in section.source_urls if u not in first.source_urls]
                 continue
             seen[key] = section
