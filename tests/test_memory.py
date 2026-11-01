@@ -83,3 +83,22 @@ def test_previously_reported_and_calendar():
     assert memory.previously_reported("AKBNK", date(2026, 10, 23)) == []  # older than 7 days
     assert [e["date"] for e in memory.upcoming(date(2026, 10, 27))] == ["2026-10-27"]
     assert memory.upcoming(date(2026, 10, 15), days=7) == []
+
+
+def test_find_repeat_drops_reworded_news_but_keeps_new_figures():
+    from datetime import date
+
+    memory = DigestMemory()
+    memory.reported = [
+        {"key": "SAHOL", "date": "2026-10-31", "label": "Yönetim",
+         "text": "Bağımsız yönetim kurulu üyesi Tayfun Bayazıt, isteğiyle görevinden ayrıldı; boşalan denetim komitesi üyeliği 30 Ekim 2026 itibarıyla Mehmet Kahya'ya atandı."},
+        {"key": "GUBRF", "date": "2026-10-31", "label": "Geri alım",
+         "text": "4 mlr TL azami tutarlı pay geri alım programı kapsamında 600 bin TL nominal pay geri alındı."},
+    ]
+    today = date(2026, 11, 1)
+    again = ("Sabancı Holding, Bağımsız Yönetim Kurulu Üyesi Tayfun Bayazıt’ın kendi isteğiyle görevinden ayrıldığını duyurdu; "
+             "boşalan Denetim Komitesi üyeliği 30 Ekim 2026 itibarıyla Mehmet Kahya’ya atandı.")
+    assert memory.find_repeat("SAHOL", again, today)["date"] == "2026-10-31"
+    new_day = "4 mlr TL azami tutarlı pay geri alım programı kapsamında 550 bin TL nominal pay daha geri alındı."
+    assert memory.find_repeat("GUBRF", new_day, today) is None
+    assert memory.find_repeat("SAHOL", "Sabancı 3. çeyrekte 5,2 mlr TL net kâr açıkladı.", today) is None

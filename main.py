@@ -22,7 +22,7 @@ from config.constants import SourceType
 from config.settings import AppConfig, PolitenessConfig, TickerConfig, get_settings
 from nlp.categorizer import categorize_batch
 from nlp.dedup import deduplicate
-from nlp.relevance import tr_lower
+from nlp.relevance import company_body, tr_lower
 from nlp.market_brief import build_market_brief
 from nlp.providers.factory import get_provider
 from nlp.providers.noop_provider import NoopProvider
@@ -159,11 +159,19 @@ async def _build_company_report(
     if settings.yaml.sources.bing_news.enabled:
         await BingNewsScraper(ticker, settings.yaml.sources.bing_news, _GOOGLE_NEWS_POLITENESS).fill_headline_only(news_items)
     news_items = memory.drop_reported(news_items, ticker.symbol)
+    for item in news_items:
+        if item.source != SourceType.KAP:
+            body = company_body(item.title, item.body_snippet, ticker.symbol)
+            if body != item.body_snippet:
+                logger.info("%s: çok hisseli haberden yalnızca bu hisseye ait kısım alındı: %s", ticker.symbol, item.title[:90])
+                item.body_snippet = body
 
     report = CompanyReport(
         ticker=ticker.symbol, company_name=ticker.name,
         previously_reported=memory.previously_reported(ticker.symbol),
     )
+    logger.info("%s: son günlerin %d bülten maddesi modele 'zaten yazıldı' olarak veriliyor",
+                ticker.symbol, len(report.previously_reported))
     for item in news_items:
         report.add_item(item)
     logger.info(
@@ -179,7 +187,7 @@ async def _build_company_report(
     try:
         source_text = " ".join(f"{i.title} {i.body_snippet or ''}" for i in sent_items)
         synthesized = polish_report(await provider.summarize_company_report(report), source_text)
-        synthesized = _fact_checked(synthesized, source_text)
+        synthesized = _without_repeats(_fact_checked(synthesized, source_text), memory)
         log_outputs(ticker.symbol, [s for _, secs in synthesized.ordered_sections() for s in secs], sent_items)
         return synthesized
     except RuntimeError as exc:
@@ -206,6 +214,23 @@ def _fact_checked(report: SynthesizedCompanyReport, source_text: str) -> Synthes
     return keep_summary_only_when_useful(report)
 
 
+def _without_repeats(report: SynthesizedCompanyReport, memory: DigestMemory) -> SynthesizedCompanyReport:
+    report.sections_by_category = {
+        category: kept
+        for category, sections in report.ordered_sections()
+        if (kept := [s for s in sections if not _is_repeat(memory, report.ticker, s)])
+    }
+    return keep_summary_only_when_useful(report)
+
+
+def _is_repeat(memory: DigestMemory, key: str, section: SynthesizedSection) -> bool:
+    earlier = memory.find_repeat(key, section.narrative)
+    if earlier:
+        logger.info("%s: «%s» %s tarihli bültende zaten vardı, çıkarıldı: %s",
+                    key, section.subheading, earlier["date"], section.narrative[:160])
+    return earlier is not None
+
+
 _CALENDAR_LABELS = {"bilanço tarihi": "finansal sonuçlar", "finansal sonuç": "finansal sonuçlar", "temettü": "temettü ödemesi"}
 
 
@@ -217,9 +242,12 @@ def _calendar_section(memory: DigestMemory) -> SynthesizedSection | None:
     parts = []
     for event in memory.upcoming(today):
         when = "Bugün" if event["date"] == today.isoformat() else turkish_numbers(
-            date.fromisoformat(event["date"]).strftime("%d %b %Y")
+            date.fromisoformat(event["date"]).strftime("%d %b")
         ).lstrip("0")
-        parts.append(f"{when}: {event['ticker']} {_CALENDAR_LABELS.get(event['label'].lower(), event['label'].lower())}")
+        # "2 Kasım: YEOTK borçlanma" said nothing (2026-11-01): a known kind
+        # of event gets its short name, anything else the sentence itself.
+        what = _CALENDAR_LABELS.get(event["label"].lower()) or fit_headline(event["text"], 90)
+        parts.append(f"{when}: {event['ticker']} — {what}")
     if not parts:
         return None
     return SynthesizedSection(subheading="Şirket takvimi", narrative=" · ".join(parts))
@@ -249,6 +277,7 @@ async def run_pipeline(memory: DigestMemory | None = None) -> DigestRun:
     digest_run.market_brief = await build_market_brief(
         settings, get_provider(settings), memory.previously_reported("PIYASA")
     )
+    digest_run.market_brief = [s for s in digest_run.market_brief if not _is_repeat(memory, "PIYASA", s)]
     calendar = _calendar_section(memory)
     if calendar:
         digest_run.market_brief.append(calendar)

@@ -39,7 +39,10 @@ KEEP_DAYS = 14
 MARGIN_HOURS = 6
 MAX_LOOKBACK_HOURS = 7 * 24
 REPORTED_DAYS = 7
-REPORTED_CHARS = 220
+REPORTED_CHARS = 500
+# A section this similar to one already mailed, with no figure the earlier
+# one didn't have, is the same news again (utils/memory.py:find_repeat).
+REPEAT_SIMILARITY = 75
 TITLE_SIMILARITY = 90
 MIN_TITLE_WORDS = 5
 
@@ -182,6 +185,27 @@ class DigestMemory:
             if e.get("key") == key and cutoff <= e.get("date", "") < today.isoformat()
         ]
 
+    def find_repeat(self, key: str, text: str, today: date | None = None) -> dict | None:
+        """The earlier mail item `text` repeats, if any. The prompt's "already
+        reported" list alone didn't stop it: GLYHO's St. Vincent port deal
+        (28 and 30 Oct) and SAHOL's board resignation (31 Oct and 1 Nov)
+        were written again in other words. A section that brings a figure
+        the earlier one didn't have (a new buyback day) is kept."""
+        from utils.factcheck import source_numbers, unsourced
+
+        today = today or datetime.now(timezone.utc).date()
+        cutoff = (today - timedelta(days=REPORTED_DAYS)).isoformat()
+        key_text = _similarity_text(text)
+        for entry in self.reported:
+            if entry.get("key") != key or not (cutoff <= entry.get("date", "") < today.isoformat()):
+                continue
+            if fuzz.token_set_ratio(key_text, _similarity_text(entry["text"])) < REPEAT_SIMILARITY:
+                continue
+            if unsourced(text, source_numbers(entry["text"])):
+                continue  # carries a new figure
+            return entry
+        return None
+
     def upcoming(self, today: date | None = None, days: int = 7) -> list[dict]:
         """Company events from earlier mails falling in the next `days`."""
         today = today or datetime.now(timezone.utc).date()
@@ -230,11 +254,15 @@ class DigestMemory:
             for _, sections in report.ordered_sections():
                 for section in sections:
                     add(report.ticker, section.subheading, section.narrative)
-                    for event_date in _scheduled_dates(section.narrative, sent_on):
+                    for event_date, sentence in _scheduled_dates(section.narrative, sent_on):
                         self.calendar.append({
                             "ticker": report.ticker, "date": event_date, "label": section.subheading,
-                            "text": " ".join(section.narrative.split())[:160],
+                            "text": sentence[:160],
                         })
+
+
+def _similarity_text(text: str) -> str:
+    return " ".join(re.sub(r"[^\w\s%,]", " ", text.lower()).split())
 
 
 _MONTH_NUMBERS = {
@@ -250,25 +278,27 @@ _FUTURE_EVENT = re.compile(
 )
 
 
-def _scheduled_dates(text: str, sent_on: str) -> list[str]:
-    """Future dates in a sentence announcing an upcoming event."""
+def _scheduled_dates(text: str, sent_on: str) -> list[tuple[str, str]]:
+    """(future date, the sentence announcing it) for upcoming events."""
     year = int(sent_on[:4])
-    dates = []
-    for sentence in re.split(r"(?<=[.;])\s+", text):
+    found = []
+    from utils.factcheck import _sentences
+
+    for sentence in [part for s in _sentences(text) for part in s.split(";")]:
         if not _FUTURE_EVENT.search(sentence):
             continue
         for day, month, yr in _TEXT_DATE.findall(sentence):
-            dates.append((int(yr or year), _MONTH_NUMBERS[month.lower().replace("İ", "i")], int(day)))
+            found.append(((int(yr or year), _MONTH_NUMBERS[month.lower().replace("İ", "i")], int(day)), sentence))
         for day, month, yr in _NUMERIC_DATE.findall(sentence):
-            dates.append((int(yr), int(month), int(day)))
-    result = []
-    for y, m, d in dates:
+            found.append(((int(yr), int(month), int(day)), sentence))
+    result: list[tuple[str, str]] = []
+    for (y, m, d), sentence in found:
         try:
             iso = date(y, m, d).isoformat()
         except ValueError:
             continue
-        if iso > sent_on and iso not in result:
-            result.append(iso)
+        if iso > sent_on and iso not in [r[0] for r in result]:
+            result.append((iso, " ".join(sentence.split()).rstrip(".;")))
     return result
 
 

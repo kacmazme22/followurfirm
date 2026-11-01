@@ -76,7 +76,10 @@ sources:
     # `when:2d` is Google News' own recency operator: without it the feed's
     # 100-item cap filled up with months-old articles and the 36h filter in
     # google_news_scraper.py then dropped all 100 (KCHOL/AKBNK, 2026-10-03).
-    query_template_tr: "{company_name} {ticker} when:2d"
+    # Name OR ticker: requiring both found nothing for RGYAS on 4 of 5 days
+    # (2026-10-28..11-01) — headlines say "Rönesans Gayrimenkul" without the
+    # ticker, or "RGYAS" without the full name.
+    query_template_tr: '"{company_name}" OR {ticker} when:2d'
     language: "tr"
     country: "TR"
 

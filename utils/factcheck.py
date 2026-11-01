@@ -27,12 +27,12 @@ TOLERANCE = 0.015  # relative: rounding to 2-3 significant digits
 _SCALES = {
     "bin": 1e3,
     "mn": 1e6, "mln": 1e6, "milyon": 1e6, "million": 1e6,
-    "mlr": 1e9, "mlrd": 1e9, "mlyr": 1e9, "milyar": 1e9, "billion": 1e9,
+    "mlr": 1e9, "mlrd": 1e9, "mlyr": 1e9, "milyar": 1e9, "billion": 1e9, "bn": 1e9,
     "trilyon": 1e12,
 }
 _NUMBER = re.compile(
-    r"(?<![\w.,])(%\s?)?(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d+))?(?![\d])"
-    r"(?:\s?(%))?(?:\s?(bin|mn|mln|milyon|million|mlr|mlrd|mlyr|milyar|billion|trilyon)\b)?",
+    r"(?<![\w.,])(%\s?|yüzde\s)?(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d+))?(?![\d])"
+    r"(?:\s?(%))?(?:\s?(bin|mn|mln|milyon|million|mlr|mlrd|mlyr|milyar|billion|bn|trilyon)\b)?",
     re.IGNORECASE,
 )
 _MONTHS = "ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık"
@@ -80,8 +80,23 @@ def _collapse_compounds(text: str) -> str:
     return _COMPOUND.sub(lambda m: total(m) if m.group(3) else m.group(0), text)
 
 
-def _amounts(text: str, checkable_only: bool) -> list[tuple[str, float]]:
-    """(matched text, value) for the numbers in `text`. With
+class SourceNumbers:
+    """The numbers in the sources, in two pools. `amounts`: figures carrying
+    a unit (scaled: "1,71 mlr" -> 1.71e9) and long grouped numbers
+    ("1.713.897.558"). `raw`: every number as written. An output figure
+    with a unit is matched against `amounts` only: "1,71 mn TL" for a
+    source "1,71 mlr TL" passed on 2026-10-29 because some other number in
+    a bank's financial statement happened to be near 1,71 million."""
+
+    def __init__(self, amounts: set[float], raw: set[float], with_units: set[tuple[float, float]] | None = None) -> None:
+        self.amounts = amounts
+        self.raw = raw
+        # (number as written, unit scale) for figures written with a unit word
+        self.with_units = with_units or set()
+
+
+def _amounts(text: str, checkable_only: bool, with_mantissa: bool = False) -> list:
+    """(matched text, value, has_unit) for the numbers in `text`. With
     checkable_only, only figures worth checking: with a unit or %, with
     decimals, or of 1000 and more."""
     cleaned = _NOT_AMOUNTS.sub(" ", _collapse_compounds(_normalize(text)))
@@ -92,25 +107,46 @@ def _amounts(text: str, checkable_only: bool) -> list[tuple[str, float]]:
         scaled = value * _SCALES.get((unit or "").lower(), 1)
         if checkable_only and not (unit or pct_before or pct_after or fraction or value >= 1000):
             continue
-        result.append((match.group(0).strip(), scaled))
+        has_unit = bool(unit) or (integer.count(".") >= 2)  # "1.713.897.558" is a full amount
+        if with_mantissa:
+            result.append((match.group(0).strip(), scaled, has_unit, value, _SCALES.get((unit or "").lower())))
+        else:
+            result.append((match.group(0).strip(), scaled, has_unit))
     return result
 
 
-def source_numbers(source_text: str) -> set[float]:
-    numbers: set[float] = set()
-    for _, value in _amounts(source_text, checkable_only=False):
-        numbers.add(value)
+def source_numbers(source_text: str) -> SourceNumbers:
+    amounts: set[float] = set()
+    raw: set[float] = set()
+    with_units: set[tuple[float, float]] = set()
+    for _, value, has_unit, mantissa, scale in _amounts(source_text, checkable_only=False, with_mantissa=True):
+        (amounts if has_unit else raw).add(value)
+        if scale:
+            with_units.add((mantissa, scale))
     for match in _NUMBER.finditer(_normalize(source_text)):  # raw values too, dates included
-        numbers.add(_value(match.group(2), match.group(3)))
-    return numbers
+        raw.add(_value(match.group(2), match.group(3)))
+    return SourceNumbers(amounts, raw, with_units)
 
 
 def _known(value: float, numbers: set[float]) -> bool:
     return any(abs(value - n) <= TOLERANCE * max(abs(n), 1e-9) for n in numbers)
 
 
-def unsourced(text: str, numbers: set[float]) -> list[str]:
-    return [shown for shown, value in _amounts(text, checkable_only=True) if not _known(value, numbers)]
+def _wrong_unit(mantissa: float, scale: float | None, numbers: SourceNumbers) -> bool:
+    """"1,71 mn" where the sources only say "1,71 mlr": same figure, the
+    unit changed (2026-10-29, Rekabet Kurulu fine)."""
+    if not scale:
+        return False
+    same = [s for m, s in numbers.with_units if abs(m - mantissa) <= 0.005 * max(m, 1e-9)]
+    return bool(same) and scale not in same
+
+
+def unsourced(text: str, numbers: SourceNumbers) -> list[str]:
+    return [
+        shown for shown, value, has_unit, mantissa, scale in _amounts(text, checkable_only=True, with_mantissa=True)
+        if _wrong_unit(mantissa, scale, numbers)
+        or not _known(value, numbers.amounts if has_unit else numbers.raw | numbers.amounts)
+    ]
 
 
 _BREAK = re.compile(r"\.\s+(?=[A-ZÇĞİÖŞÜ0-9%])")
@@ -129,7 +165,7 @@ def _sentences(paragraph: str) -> list[str]:
     return parts
 
 
-def drop_unsourced(text: str, numbers: set[float], label: str) -> str:
+def drop_unsourced(text: str, numbers: SourceNumbers, label: str) -> str:
     """`text` without the sentences carrying an unsourced figure."""
     paragraphs = []
     for paragraph in text.split("\n\n"):
