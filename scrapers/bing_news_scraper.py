@@ -121,7 +121,7 @@ class BingNewsScraper(BaseScraper):
     async def fill_headline_only(self, items: list[NewsItem]) -> None:
         """For headline-only items (Google News), finds the same headline on
         Bing and takes its publisher link, description and article text."""
-        targets = [i for i in items if not i.body_snippet and i.source == SourceType.GOOGLE_NEWS]
+        targets = [i for i in items if not i.body_snippet and i.source != SourceType.KAP]
         if not targets:
             return
         try:

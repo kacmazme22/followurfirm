@@ -26,6 +26,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
 import re
+from urllib.parse import urlparse
 
 import trafilatura
 from bs4 import BeautifulSoup
@@ -267,9 +268,36 @@ ARTICLE_HEADERS = {
 RATE_LIMIT_WAIT_SECONDS = 8
 
 
+# Sites that refused this run (403, or 429 after the retry). The rest of
+# the run doesn't spend time on them: the same story is looked for on
+# another outlet instead (scrapers/google_news_scraper.py).
+_REFUSING_HOSTS: set[str] = set()
+
+
+def _host(url: str) -> str:
+    return urlparse(url).netloc.lower().removeprefix("www.").removeprefix("m.")
+
+
+def is_refusing(url: str) -> bool:
+    return _host(url) in _REFUSING_HOSTS
+
+
+class SiteRefused(Exception):
+    pass
+
+
 async def _get_article(get, url: str):
     """GET with browser headers; on 429 wait (Retry-After, at most 20 s) and
-    try once more."""
+    try once more. A site that refuses is remembered for the run."""
+    if is_refusing(url):
+        raise SiteRefused(f"{_host(url)} bu çalışmada erişimi reddetti, atlandı")
+    response = await _get_article_once(get, url)
+    if response.status_code in (403, 429):
+        _REFUSING_HOSTS.add(_host(url))
+    return response
+
+
+async def _get_article_once(get, url: str):
     response = await get(url, headers=dict(ARTICLE_HEADERS))
     if response.status_code == 429:
         try:

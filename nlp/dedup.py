@@ -60,8 +60,10 @@ def _resolve_duplicate(a: NewsItem, b: NewsItem) -> NewsItem:
     link (if any) carried onto it. Equal priority: the copy with more text
     wins (a Bing article over a bare Google headline of the same story),
     then `a` (first-seen)."""
-    def rank(item: NewsItem) -> tuple[int, int]:
-        return _priority(item), len(item.body_snippet or "")
+    def rank(item: NewsItem) -> tuple[bool, int, int]:
+        # A copy with text beats a bare headline whatever its source (a KAP
+        # filing with its form over a Google headline of it).
+        return bool(item.body_snippet), _priority(item), len(item.body_snippet or "")
 
     winner, loser = (b, a) if rank(b) > rank(a) else (a, b)
     return _carry_kap_link(winner, loser)

@@ -29,18 +29,24 @@ from email.utils import parsedate_to_datetime
 from urllib.parse import quote
 
 import feedparser
+from rapidfuzz import fuzz
 
 from config.constants import MAX_ARTICLES_TO_ENRICH_PER_TICKER, SourceType
 from config.settings import GoogleNewsRssConfig, PolitenessConfig, TickerConfig
 from scrapers.base import BaseScraper
 from nlp.relevance import filter_relevant
-from scrapers.models import RawScrapedItem
+from scrapers.models import NewsItem, RawScrapedItem
 from utils.memory import kap_lookback_days, news_lookback_hours
-from utils.article_fetcher import StaleArticle, decode_google_urls, fetch_article_body
+from utils.article_fetcher import StaleArticle, decode_google_urls, fetch_article_body, is_refusing
 
 logger = logging.getLogger(__name__)
 
 GOOGLE_NEWS_RSS_BASE = "https://news.google.com/rss/search"
+# Looking for an unreadable story on other outlets (find_text_elsewhere).
+MAX_ALT_LOOKUPS_PER_TICKER = 6
+ALT_QUERY_WORDS = 8
+ALT_TITLE_SIMILARITY = 80
+ALT_CANDIDATES = 4
 
 # Google News RSS titles are consistently "Headline - Source Name"; the
 # separator it uses to append the source name at the end of the title.
@@ -156,6 +162,55 @@ class GoogleNewsScraper(BaseScraper):
             "%s: %d haber zenginleştirildi, %d'si başarısız/boş döndü",
             self.ticker.symbol, enriched, failed,
         )
+
+    async def find_text_elsewhere(self, items: list[NewsItem]) -> None:
+        """A headline whose own page couldn't be read (blocked site, no
+        text) is searched again on Google News: the same story is nearly
+        always carried by several outlets, and the first one that can be
+        read gives the text and the link. The bare headline is the last
+        resort (user's request, 2026-11-01)."""
+        targets = [i for i in items if not i.body_snippet and i.source != SourceType.KAP][:MAX_ALT_LOOKUPS_PER_TICKER]
+        if not targets:
+            return
+        found = 0
+        try:
+            async with self._client_session():
+                for item in targets:
+                    found += await self._read_elsewhere(item)
+        except Exception as exc:  # optional enrichment: never fails the ticker
+            logger.warning("%s: başka kanalda arama durdu: %s", self.ticker.symbol, exc)
+        logger.info(
+            "%s: metni alınamayan %d haberin %d tanesi başka bir kanalda bulundu",
+            self.ticker.symbol, len(targets), found,
+        )
+
+    async def _read_elsewhere(self, item: NewsItem) -> int:
+        words = re.sub(r"[^\w\s%,.]", " ", item.title).split()[:ALT_QUERY_WORDS]
+        query = f"{' '.join(words)} when:7d"
+        url = (
+            f"{GOOGLE_NEWS_RSS_BASE}?q={quote(query)}&hl={self.source_config.language}"
+            f"&gl={self.source_config.country}&ceid={self.source_config.country}:{self.source_config.language}"
+        )
+        response = await self._get(url)
+        candidates = []
+        for entry in feedparser.parse(response.text).entries:
+            title, _ = self._split_title_and_source(entry.get("title", ""))
+            if entry.get("link") and fuzz.token_set_ratio(title, item.title) >= ALT_TITLE_SIMILARITY:
+                candidates.append(entry["link"])
+            if len(candidates) >= ALT_CANDIDATES:
+                break
+        for publisher_url in await decode_google_urls(candidates):
+            if not publisher_url or publisher_url == str(item.url) or is_refusing(publisher_url):
+                continue
+            try:
+                body = await fetch_article_body(self, publisher_url, is_google_news=False, check_age=True)
+            except StaleArticle:
+                continue
+            if body:
+                item.body_snippet = body[:2000]
+                item.url = publisher_url
+                return 1
+        return 0
 
     @staticmethod
     def _split_title_and_source(raw_title: str) -> tuple[str, str | None]:
