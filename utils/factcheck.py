@@ -142,11 +142,15 @@ def _wrong_unit(mantissa: float, scale: float | None, numbers: SourceNumbers) ->
 
 
 def unsourced(text: str, numbers: SourceNumbers) -> list[str]:
-    return [
-        shown for shown, value, has_unit, mantissa, scale in _amounts(text, checkable_only=True, with_mantissa=True)
-        if _wrong_unit(mantissa, scale, numbers)
-        or not _known(value, numbers.amounts if has_unit else numbers.raw | numbers.amounts)
-    ]
+    result = []
+    for shown, value, has_unit, mantissa, scale in _amounts(text, checkable_only=True, with_mantissa=True):
+        pool = numbers.amounts if has_unit else numbers.raw | numbers.amounts
+        # "11,253 m²" for a source "11.253 m²": a thousands separator written
+        # as a comma, not a decimal (GLYHO, 2026-11-01).
+        alternatives = [value, value * 1000] if re.fullmatch(r"\d{1,3},\d{3}", shown) else [value]
+        if _wrong_unit(mantissa, scale, numbers) or not any(_known(v, pool) for v in alternatives):
+            result.append(shown)
+    return result
 
 
 _BREAK = re.compile(r"\.\s+(?=[A-ZÇĞİÖŞÜ0-9%])")

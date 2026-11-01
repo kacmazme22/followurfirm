@@ -40,6 +40,7 @@ from scrapers.models import RawScrapedItem
 logger = logging.getLogger(__name__)
 
 MULTI_TICKER_RUN = 4
+BODY_CHARS_FOR_RELEVANCE = 400
 
 # 4-6 uppercase letters/digits as a standalone token: BIST ticker shape.
 _TICKER_TOKEN = r"[A-ZÇĞİÖŞÜ0-9]{4,6}"
@@ -192,7 +193,12 @@ def filter_relevant(items: list[RawScrapedItem], ticker: TickerConfig) -> list[R
             dropped_multi += 1
         elif is_market_noise(item.raw_title, item.raw_url):
             dropped_noise += 1
-        elif not _mentions_company(item.raw_title, keywords):
+        # The headline may name only a property or brand ("Maltepe Piazza
+        # AVM açıldı", a Rönesans GYO mall, 2026-11-01); the text names the
+        # company. Bing items carry a description, Bigpara a body.
+        elif not _mentions_company(item.raw_title, keywords) and not _mentions_company(
+            (item.raw_body_snippet or "")[:BODY_CHARS_FOR_RELEVANCE], keywords
+        ):
             dropped_unrelated += 1
             # Logged so a too-strict filter is visible in the Actions log
             # (KCHOL lost 21 of 26 Google items on 2026-10-13).
