@@ -145,6 +145,16 @@
               </ul>
             </div>
             {% endif %}
+            {% if digest_run.experiment_notes %}{% set day = digest_run.run_date.strftime('%d.%m.%Y') %}
+            <div style="font-family:{{ colors.SANS }}; font-size:11px; color:{{ colors.C.sepia }}; margin-bottom:10px;">
+              <b>Deneme kayıtları</b> — yeni kuralların bugün yaptıkları. <i>Uygulandı</i>: bültene yansıdı; <i>gözlem</i>: yalnızca kaydedildi, bülten değişmedi.
+              <ul style="margin:6px 0 0; padding-left:18px;">
+                {% for n in digest_run.experiment_notes %}
+                <li style="margin-bottom:3px;"><b>{{ rule_names.get(n.rule, n.rule) }}</b> ({{ 'uygulandı' if n.applied else 'gözlem' }}) &middot; {{ n.key }}: {{ n.text }}{% if feedback_to %} <span style="white-space:nowrap;"><a href="{{ feedback('dogru', day, 'Deneme', rule_names.get(n.rule, n.rule), n.key ~ ': ' ~ n.text) }}" style="color:{{ colors.C.sepia }};">doğru</a> &middot; <a href="{{ feedback('yanlis', day, 'Deneme', rule_names.get(n.rule, n.rule), n.key ~ ': ' ~ n.text) }}" style="color:{{ colors.C.sepia }};">yanlış</a></span>{% endif %}</li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
             <div style="font-family:{{ colors.SANS }}; font-size:11px; color:{{ colors.C.cognac }};">
               FollowUrFirm &middot; {{ digest_run.run_date.strftime('%d.%m.%Y %H:%M') }} itibarıyla oluşturuldu.{% if feedback_to %} &middot; <a href="{{ feedback('not', digest_run.run_date.strftime('%d.%m.%Y'), 'Bülten') }}" style="color:{{ colors.C.cognac }};">Bülten hakkında not yaz</a>{% endif %}
             </div>

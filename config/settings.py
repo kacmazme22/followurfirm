@@ -172,6 +172,9 @@ class RawYamlConfig(BaseModel):
     email: EmailContentConfig = Field(default_factory=EmailContentConfig)
     cache: dict = Field(default_factory=lambda: {"enabled": True})
     logging: dict = Field(default_factory=lambda: {"level": "INFO", "json_format": False})
+    # Trial switches for new digest rules: "on", "shadow" (decide and report
+    # in the mail's "Deneme kayıtları" box, change nothing) or "off".
+    experiments: dict[str, Literal["on", "shadow", "off"]] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------

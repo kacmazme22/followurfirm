@@ -135,3 +135,18 @@ cache:
 logging:
   level: "INFO"
   json_format: false
+
+# Trial switches for new rules (utils/experiments.py). "on": applied, and
+# what it changed is listed in the mail's "Deneme kayıtları" box; "shadow":
+# nothing is changed, the box lists what it WOULD have changed; "off".
+# Each entry in the box has "doğru · yanlış" links: a rule that proves
+# itself stays on, one that misfires is fixed or removed.
+experiments:
+  buyback_weekly: "on"          # daily buyback trades at most once a week, never the subject
+  headline_same_ticker: "on"    # subject figures must come from that company's own items
+  kap_form_tail: "on"           # long buyback forms keep their latest rows too
+  calendar_near_days: "on"      # calendar line: today and tomorrow (Mondays: the week)
+  headline_only_dedup: "on"     # drop a bare headline that repeats an item with text
+  no_headline_low_value: "on"   # interviews, events, broker flows etc. never the subject
+  llm_repeat_check: "shadow"    # model asks "same event as an earlier mail?"
+  same_day_merge: "shadow"      # same event under two labels on one day

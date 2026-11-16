@@ -223,6 +223,8 @@ YAZIM:
 - AYNI OLAY = TEK MADDE: bir olayın KAP bildirimi ve onu aktaran haberler (ör. Rekabet Kurulu cezasının KAP açıklaması + "Akbank'a 1,7 milyar TL ceza" haberleri; bilanço tarihinin KAP finansal takvimi + "bilançoyu 27 Ekim'de açıklayacak" haberleri) tek maddedir. Farklı kaynaklarda farklı yazılmış aynı tutar (1.713.897.558 TL = 1,7 milyar TL) AYNI rakamdır: ASLA toplama, iki ayrı olay sanma.
 - Aracı kurumların kâr/hedef fiyat tahminleri "Analist raporu"dur, "Finansal sonuç" değildir; "Finansal sonuç" yalnızca şirketin kendi açıkladığı sonuçlardır.
 - Röportaj, demeç ve görüş yazıları analist raporu DEĞİLDİR; etiketleri "Röportaj". Etiketi kurum adı yapma ("İş Yatırım" değil "Analist raporu"). Metne "(içerik detaylandırılmamış)", "(rakamlar haberde yer almıyor)" gibi parantez içi açıklama ekleme.
+- Pay geri alımının günlük İŞLEM bildirimleri (bugün kaç pay, hangi fiyattan alındı) TEK cümledir: "13 Kasım'da 7,40-7,48 TL'den 250 bin pay geri aldı." Programın toplamını, tavanını, karar tarihini, önceki işlemleri tekrar ANLATMA; bunlar yalnızca program ilk açıklandığında veya değiştiğinde yazılır.
+- ESKİ OLAY: Haber bugün yayımlanmış ama anlattığı olay bir aydan eskiyse (ör. geçen yılın çeyrek sonucu, aylar önce açılmış bir tesis) ve bugüne ait yeni bir gelişme içermiyorsa o maddeyi YAZMA; yeni bir gelişme varsa onunla aç, eski olayı tarihiyle bağlam olarak ver.
 - Aynı TÜRDEKİ farklı olaylara (ör. iki ayrı borçlanma) AYNI etiketi ver; bunlar tek başlık altında ayrı paragraflar olarak gösterilecek.
 - Rakamları Türkçe yaz: "30 mlr TL", "173,8 mn TL", ondalık için virgül; "30,000,000,000", "TRY", "Oct" gibi İngilizce biçimler YASAK.
 - Aynı rapor/olay için birden fazla haber varsa (ör. aynı aracı kurum raporunun hedef fiyat ve sektör görünümü haberleri) TEK maddede birleştir.
@@ -242,6 +244,12 @@ RAKAM DOĞRULUĞU (en önemli kural):
 
 Çıktıyı SADECE JSON olarak ver ("category" ve "kisaca" alanlarını yalnızca kullanıcı mesajı isterse ekle):
 {"kisaca": "...", "sections": [{"category": "...", "subheading": "...", "narrative": "...", "source_ids": [1]}]}"""
+
+SAME_EVENT_SYSTEM_PROMPT = """Bir yatırımcı bülteninde tekrarları ayıklıyorsun. Sana önceki günlerin bültenlerinde yazılmış maddeler (E1, E2, ...) ve bugünkü maddeler (B1, B2, ...) verilecek; hepsi aynı şirketle ilgili.
+
+Bugünkü bir madde, önceki bir maddeyle AYNI OLAYI anlatıyor VE okuyucuya YENİ bir bilgi (yeni rakam, yeni tarih, yeni aşama, yeni karar) vermiyorsa onu tekrar say. Aynı türden ama farklı olaylar (iki ayrı sözleşme, iki farklı günün geri alım işlemi, yeni çeyreğin sonucu) tekrar DEĞİLDİR. Emin değilsen tekrar sayma.
+
+Çıktıyı SADECE JSON olarak ver: {"tekrarlar": [{"bugun": 1, "onceki": 3}]} (tekrar yoksa boş liste)."""
 
 MARKET_SYSTEM_PROMPT = """Sen Borsa İstanbul odaklı bir sabah bülteninin editörüsün. Sana son 24 saatin piyasa haberlerinin başlıkları ve (varsa) kısa özetleri verilecek. Bültenin en üstündeki "Piyasa Gündemi" kutusunu yaz: piyasayı etkileyebilecek en önemli 3-5 gelişme.
 
@@ -390,6 +398,34 @@ class GroqProvider(SummarizerProvider):
         if not isinstance(headline, str) or not headline.strip():
             return None
         return headline.strip().rstrip(".")
+
+    async def find_same_events(self, today: list[str], earlier: list[str]) -> list[tuple[int, int]]:
+        """(today index, earlier index) pairs the model calls the same event
+        with nothing new: KCHOL's 3rd-quarter profit went out on 10, 11, 12
+        and 14 Nov in different words, past the text-similarity check. Used
+        in shadow mode first (utils/rules.py); any failure means no pairs."""
+        if not today or not earlier:
+            return []
+        prompt = "\n".join([
+            _today_line(), "Önceki bültenlerde yazılanlar:", *[f"E{i}. {t}" for i, t in enumerate(earlier, 1)],
+            "", "Bugünkü maddeler:", *[f"B{i}. {t}" for i, t in enumerate(today, 1)],
+        ])
+        try:
+            completion = await self._create(
+                max_tokens=HEADLINE_MAX_TOKENS,
+                response_format={"type": "json_object"},
+                messages=[{"role": "system", "content": SAME_EVENT_SYSTEM_PROMPT}, {"role": "user", "content": prompt}],
+            )
+            pairs = json.loads(completion.choices[0].message.content).get("tekrarlar", [])
+            result = []
+            for pair in pairs:
+                b, e = int(str(pair["bugun"]).lstrip("Bb")), int(str(pair["onceki"]).lstrip("Ee"))
+                if 1 <= b <= len(today) and 1 <= e <= len(earlier):
+                    result.append((b - 1, e - 1))
+            return result
+        except Exception as exc:
+            logger.warning("Tekrar kontrolü yapılamadı: %s: %s", type(exc).__name__, exc)
+            return []
 
     async def summarize_market(
         self, headlines: list[NewsItem], previously_reported: list[str] | None = None
