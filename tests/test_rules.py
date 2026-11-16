@@ -148,3 +148,28 @@ async def test_llm_repeat_check(mode, kept):
     report = _report("KCHOL", ("Finansal sonuç", "Üçüncü çeyrek net kârı 12,4 mlr TL oldu."))
     await rules.llm_repeat_check(report, memory, _FakeProvider())
     assert len(_texts(report)) == kept
+
+
+def test_news_announced_at_an_event_can_still_be_the_subject():
+    """16 Nov dry run: a 50 mlr TL green-finance programme presented at
+    COP31 was kept out of the subject because of the word "COP31"."""
+    news = SynthesizedSection(subheading="Yeni ürün", narrative="Akbank COP31 konferansında sanayiye 50 milyar TL yeşil finansman programı tanıttı.")
+    assert not rules.is_low_value_for_headline(news)
+
+
+def test_same_day_merge_ignores_items_without_a_common_amount():
+    experiments.configure({"same_day_merge": "on"})
+    report = _report(
+        "AKBNK",
+        ("Röportaj", "Akbank/Özben: Akbank olarak 193 tane yenilenebilir elektrik santralının finansmanını sağladık."),
+        ("Röportaj", "Akbank/Özben: 2,5 trilyon TL sürdürülebilirlik finansmanını 2030'a kadar yükseltiriz."),
+    )
+    rules.same_day_merge(report)
+    assert len(_texts(report)) == 2
+
+
+def test_notes_are_grouped_per_rule_and_company():
+    experiments.configure({"no_headline_low_value": "on"})
+    for text in ("a", "b", "c"):
+        experiments.note("no_headline_low_value", "AKBNK", text)
+    assert [n["text"] for n in experiments.notes()] == ["a · b · c"]

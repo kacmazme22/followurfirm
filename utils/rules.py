@@ -14,7 +14,7 @@ from rapidfuzz import fuzz
 
 from scrapers.models import NewsItem, SynthesizedCompanyReport, SynthesizedSection
 from utils import experiments
-from utils.factcheck import source_numbers, unsourced
+from utils.factcheck import _amounts, source_numbers, unsourced
 
 # --- buyback_weekly ---------------------------------------------------------
 
@@ -85,15 +85,26 @@ def recently_reported_buyback(memory, key: str, today: date) -> bool:
 
 _LOW_VALUE_LABELS = {"röportaj", "aracı kurum işlemleri", "özel emir işlemi", "sosyal sorumluluk", "pay dönüşümü"}
 _LOW_VALUE_TEXT = re.compile(
-    r"personel al|işe al[ıi]m|konferans|cop\d+|ödül|etkinlik|sponsor|zirve|panel|yaşında|film", re.IGNORECASE
+    r"personel al|işe al[ıi]m|konferans|cop\d+|ödül|etkinlik|sponsor|zirve", re.IGNORECASE
 )
+
+
+def _has_amount(text: str) -> bool:
+    """A figure with a unit ("50 mlr TL", "100 mn dolar", "%35")."""
+    return any(has_unit or "%" in shown for shown, _, has_unit in _amounts(text, checkable_only=True))
 
 
 def is_low_value_for_headline(section: SynthesizedSection) -> bool:
     """Kept in the mail (the user finds interviews and such worth reading)
     but never the subject: on 8 Nov "500 büyük şirket" opened the mail."""
     label = section.subheading.lower().replace("i̇", "i").rstrip(".")
-    return label in _LOW_VALUE_LABELS or bool(_LOW_VALUE_TEXT.search(section.narrative[:300]))
+    if label in _LOW_VALUE_LABELS:
+        return True
+    # "COP31'de 50 mlr TL'lik yeşil finansman programı" is news that happens
+    # to be announced at an event (16 Nov dry run): only text without an
+    # amount counts as an event/award/hiring item.
+    head = section.narrative[:300]
+    return bool(_LOW_VALUE_TEXT.search(head)) and not _has_amount(head)
 
 
 _SUBJECT_TICKER = re.compile(r"^([A-ZÇĞİÖŞÜ]{4,6})\s*[:—-]")
@@ -167,9 +178,10 @@ def same_day_merge(report: SynthesizedCompanyReport) -> None:
             if id(second) in removed:
                 continue
             similar = fuzz.token_set_ratio(first.narrative.lower(), second.narrative.lower()) >= 75
-            shared = not unsourced(second.narrative, source_numbers(first.narrative)) and bool(
-                re.search(r"\d", second.narrative)
-            )
+            # At least one amount of the second also in the first ("193
+            # santral" vs "2,5 trilyon TL" share none: 16 Nov dry run).
+            figures = _amounts(second.narrative, checkable_only=True)
+            shared = bool(figures) and len(unsourced(second.narrative, source_numbers(first.narrative))) < len(figures)
             if not (similar and shared):
                 continue
             experiments.note(

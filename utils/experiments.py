@@ -47,7 +47,16 @@ def note(name: str, key: str, text: str) -> None:
 
 
 def notes() -> list[dict]:
-    return list(_notes)
+    """One line per rule and company: 16 low-value notes for AKBNK on
+    16 Nov would bury the box."""
+    grouped: dict[tuple, dict] = {}
+    for n in _notes:
+        key = (n["rule"], n["key"], n["applied"])
+        if key in grouped:
+            grouped[key]["text"] += " · " + n["text"]
+        else:
+            grouped[key] = dict(n)
+    return list(grouped.values())
 
 
 RULE_NAMES = {
