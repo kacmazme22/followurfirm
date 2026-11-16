@@ -38,6 +38,7 @@ from utils.factcheck import check_line, check_sections
 from utils.feedback import feedback_link
 from utils.formatting import fit_headline, keep_summary_only_when_useful, polish_report, standard_units, turkish_numbers
 from utils.email_sender import build_digest_subject, send_digest_email
+from utils import experiments, rules
 from utils.memory import DigestMemory, load_memory
 
 logger = logging.getLogger(__name__)
@@ -163,6 +164,7 @@ async def _build_company_report(
     ).find_text_elsewhere(news_items)
     if settings.yaml.sources.bing_news.enabled:
         await BingNewsScraper(ticker, settings.yaml.sources.bing_news, _GOOGLE_NEWS_POLITENESS).fill_headline_only(news_items)
+    news_items = rules.drop_headline_copies(news_items, ticker.symbol)
     headline_only = sum(1 for i in news_items if not i.body_snippet)
     logger.info("%s: %d haberin %d tanesi yalnızca başlıkla kaldı", ticker.symbol, len(news_items), headline_only)
     news_items = memory.drop_reported(news_items, ticker.symbol)
@@ -195,6 +197,10 @@ async def _build_company_report(
         source_text = " ".join(f"{i.title} {i.body_snippet or ''}" for i in sent_items)
         synthesized = polish_report(await provider.summarize_company_report(report), source_text)
         synthesized = _without_repeats(_fact_checked(synthesized, source_text), memory)
+        rules.buyback_weekly(synthesized, memory, _today())
+        rules.same_day_merge(synthesized)
+        await rules.llm_repeat_check(synthesized, memory, provider)
+        synthesized = keep_summary_only_when_useful(synthesized)
         log_outputs(ticker.symbol, [s for _, secs in synthesized.ordered_sections() for s in secs], sent_items)
         return synthesized
     except RuntimeError as exc:
@@ -245,9 +251,9 @@ def _calendar_section(memory: DigestMemory) -> SynthesizedSection | None:
     """"Bugün: AKBNK finansal sonuçlar · 9 Kasım: KCHOL finansal sonuçlar":
     dates announced in earlier mails (Akbank's results date was in the
     14 October mail; on the 27th nothing said "today")."""
-    today = datetime.now(ZoneInfo("Europe/Istanbul")).date()
+    today = _today()
     parts = []
-    for event in memory.upcoming(today):
+    for event in rules.calendar_events(memory.upcoming(today), today):
         when = "Bugün" if event["date"] == today.isoformat() else turkish_numbers(
             date.fromisoformat(event["date"]).strftime("%d %b")
         ).lstrip("0")
@@ -275,6 +281,7 @@ async def run_pipeline(memory: DigestMemory | None = None) -> DigestRun:
     """`memory` is filled in as a side effect: run_pipeline only filters with
     it; the caller records and saves it once the mail has gone out."""
     settings = get_settings()
+    experiments.configure(settings.yaml.experiments)
     digest_run = DigestRun()
     memory = memory if memory is not None else load_memory(enabled=False)
 
@@ -297,25 +304,60 @@ async def run_pipeline(memory: DigestMemory | None = None) -> DigestRun:
             logger.error("Ticker %s failed entirely: %s", ticker.symbol, exc, exc_info=True)
             digest_run.add_error("pipeline", ticker.symbol, str(exc))
 
-    candidates = _headline_candidates(digest_run)
+    candidates = _headline_candidates(digest_run, memory)
     headline = await get_provider(settings).pick_headline(candidates)
     if headline:
         # The subject may only use what the (checked) items say.
         headline = check_line(standard_units(turkish_numbers(headline)), "\n".join(candidates), "Konu başlığı")
+    if headline and not rules.headline_from_own_items(headline, _texts_by_key(digest_run)):
+        headline = None
     digest_run.headline = fit_headline(headline) if headline else None
     logger.info("Konu başlığı: %s", digest_run.headline)
+    digest_run.experiment_notes = experiments.notes()
     return digest_run
 
 
-def _headline_candidates(digest_run: DigestRun) -> list[str]:
+def _today() -> date:
+    return datetime.now(ZoneInfo("Europe/Istanbul")).date()
+
+
+def _texts_by_key(digest_run: DigestRun) -> dict[str, str]:
+    texts = {
+        r.ticker: " ".join(f"{s.subheading} {s.narrative}" for _, secs in r.ordered_sections() for s in secs)
+        for r in digest_run.company_reports
+    }
+    texts["PIYASA"] = " ".join(f"{s.subheading} {s.narrative}" for s in digest_run.market_brief)
+    return texts
+
+
+def _headline_candidates(digest_run: DigestRun, memory: DigestMemory | None = None) -> list[str]:
     candidates = []
+    today = _today()
     for report in digest_run.company_reports:
+        buyback_seen = memory is not None and rules.recently_reported_buyback(memory, report.ticker, today)
         for _, sections in report.ordered_sections():
-            candidates += [f"{report.ticker} — {s.subheading}: {s.narrative.split(chr(10))[0][:220]}" for s in sections]
+            for s in sections:
+                if not _headline_worthy(report.ticker, s, buyback_seen):
+                    continue
+                candidates.append(f"{report.ticker} — {s.subheading}: {s.narrative.split(chr(10))[0][:220]}")
     candidates += [
         f"Piyasa — {s.subheading}: {s.narrative[:200]}" for s in digest_run.market_brief if s.subheading != "Şirket takvimi"
     ]
     return candidates
+
+
+def _headline_worthy(ticker: str, section: SynthesizedSection, buyback_seen: bool) -> bool:
+    """Interviews, events, broker flows stay in the mail but not in the
+    subject; nor does a buyback already reported this week."""
+    if experiments.active("no_headline_low_value") and rules.is_low_value_for_headline(section):
+        experiments.note("no_headline_low_value", ticker, f"«{section.subheading}» konu satırı adaylarından çıkarıldı")
+        if experiments.applies("no_headline_low_value"):
+            return False
+    if experiments.active("buyback_weekly") and buyback_seen and rules._is_buyback(section):
+        experiments.note("buyback_weekly", ticker, "Bu hafta yazılmış geri alım konu satırı adaylarından çıkarıldı")
+        if experiments.applies("buyback_weekly"):
+            return False
+    return True
 
 
 def render_digest_text(digest_run: DigestRun) -> str:
@@ -352,6 +394,12 @@ def render_digest_text(digest_run: DigestRun) -> str:
     if digest_run.errors:
         lines.append("Uyarılar:")
         lines += [f"- {error}" for error in digest_run.errors]
+    if digest_run.experiment_notes:
+        lines += ["", "Deneme kayıtları:"]
+        lines += [
+            f"- {experiments.RULE_NAMES.get(n['rule'], n['rule'])} ({'uygulandı' if n['applied'] else 'gözlem'}) · {n['key']}: {n['text']}"
+            for n in digest_run.experiment_notes
+        ]
     return "\n".join(lines)
 
 
@@ -363,6 +411,7 @@ def render_digest_html(digest_run: DigestRun, feedback_to: str | None = None) ->
     return template.render(
         digest_run=digest_run, colors=template_colors(), feedback_to=feedback_to,
         feedback=lambda *args: feedback_link(feedback_to, *args),
+        rule_names=experiments.RULE_NAMES,
     )
 
 

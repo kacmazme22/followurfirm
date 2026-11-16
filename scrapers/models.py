@@ -217,6 +217,8 @@ class DigestRun(BaseModel):
     market_brief: list[SynthesizedSection] = Field(default_factory=list)
     company_reports: list[SynthesizedCompanyReport] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)  # graceful-degradation log surfaced in footer/logs
+    # utils/experiments.py: what the trial rules did (or would have done) today
+    experiment_notes: list[dict] = Field(default_factory=list)
 
     def add_error(self, source: SourceType | str, ticker: str, message: str) -> None:
         source_label = source.value if isinstance(source, SourceType) else source

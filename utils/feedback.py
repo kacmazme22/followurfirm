@@ -13,7 +13,7 @@ from __future__ import annotations
 from urllib.parse import quote
 
 SUBJECT_PREFIX = "FollowUrFirm geri bildirim"
-KINDS = {"yanlis": "yanlış", "gereksiz": "gereksiz", "not": "not"}
+KINDS = {"yanlis": "yanlış", "gereksiz": "gereksiz", "not": "not", "dogru": "doğru"}
 MAX_BODY_CHARS = 600
 
 

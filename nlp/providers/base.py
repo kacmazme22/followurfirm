@@ -32,6 +32,11 @@ class SummarizerProvider(ABC):
         email subject. Default: none (the plain subject is used)."""
         return None
 
+    async def find_same_events(self, today: list[str], earlier: list[str]) -> list[tuple[int, int]]:
+        """(today index, earlier index) pairs that are the same event with
+        nothing new. Default: none."""
+        return []
+
     async def summarize_market(
         self, headlines: list[NewsItem], previously_reported: list[str] | None = None
     ) -> list[SynthesizedSection]:

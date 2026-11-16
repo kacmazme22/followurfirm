@@ -41,6 +41,7 @@ from scrapers.models import RawScrapedItem
 from utils.article_fetcher import structured_text
 from utils.memory import kap_lookback_days
 from utils.pdf_text import pdf_text
+from utils.rules import form_text
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +153,7 @@ class KapScraper(BaseScraper):
                         text = f"{text or ''}\nEk (PDF): {attachment}".strip()
                         attachments += 1
                 if text and len(text) > len(item.raw_body_snippet or ""):
-                    item.raw_body_snippet = text[:MAX_DETAIL_CHARS]
+                    item.raw_body_snippet = form_text(item.raw_title, text, MAX_DETAIL_CHARS)
                     fetched += 1
                 break
         logger.info(
