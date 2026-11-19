@@ -104,7 +104,7 @@ def is_low_value_for_headline(section: SynthesizedSection) -> bool:
     # to be announced at an event (16 Nov dry run): only text without an
     # amount counts as an event/award/hiring item.
     head = section.narrative[:300]
-    return bool(_LOW_VALUE_TEXT.search(head)) and not _has_amount(head)
+    return bool(_LOW_VALUE_TEXT.search(head)) and not _has_amount(f"{section.subheading} {head}")
 
 
 _SUBJECT_TICKER = re.compile(r"^([A-ZÇĞİÖŞÜ]{4,6})\s*[:—-]")
@@ -242,7 +242,9 @@ async def llm_repeat_check(report: SynthesizedCompanyReport, memory, provider) -
     time, which the text-similarity check (find_repeat) can't see."""
     if not experiments.active("llm_repeat_check"):
         return
-    earlier = memory.previously_reported(report.ticker)
+    # The newest 15, shortened: the list is a prompt, under the same
+    # 8000-token cap as the summaries.
+    earlier = [line[:200] for line in memory.previously_reported(report.ticker)[-15:]]
     flat = [s for _, sections in report.ordered_sections() for s in sections]
     if not earlier or not flat:
         return

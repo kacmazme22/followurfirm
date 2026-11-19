@@ -131,16 +131,32 @@ def _today_line() -> str:
     return f"Bugünün tarihi: {datetime.now(ZoneInfo('Europe/Istanbul')).strftime('%d.%m.%Y')}"
 
 
+# The "already reported" list is the part of the prompt that grows by
+# itself: on 17-19 Nov AKBNK carried 33 earlier items (up to 500 chars
+# each, ~5k tokens), every call went over Groq's 8000-token-per-minute cap
+# (413) and the ticker fell back to the raw headline list. Newest lines
+# first, each shortened, within a fixed budget (~800 tokens).
+PREVIOUSLY_REPORTED_BUDGET_CHARS = 2500
+PREVIOUSLY_REPORTED_LINE_CHARS = 200
+
+
 def _previously_reported_lines(previously_reported: list[str] | None) -> list[str]:
     """Earlier mails' items, so the same event isn't written again when it
     comes back through another source."""
     if not previously_reported:
         return []
+    kept, used = [], 0
+    for line in reversed(previously_reported):  # newest last in memory
+        line = line if len(line) <= PREVIOUSLY_REPORTED_LINE_CHARS else line[: PREVIOUSLY_REPORTED_LINE_CHARS - 1] + "…"
+        if used + len(line) > PREVIOUSLY_REPORTED_BUDGET_CHARS:
+            break
+        kept.append(line)
+        used += len(line)
     return [
         "",
         "SON GÜNLERDE BÜLTENDE ZATEN YAZILANLAR (bunları TEKRAR YAZMA; aynı olay için yalnızca gerçekten YENİ bir "
         "bilgi varsa — yeni tutar, tamamlanma, onay, karar — yaz ve neyin yeni olduğunu söyle):",
-        *[f"- {line}" for line in previously_reported],
+        *[f"- {line}" for line in reversed(kept)],
     ]
 
 

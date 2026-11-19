@@ -212,7 +212,9 @@ async def _build_company_report(
         digest_run.add_error(
             "llm", ticker.symbol, f"LLM sentezi başarısız oldu ({exc}), ham liste gösteriliyor"
         )
-        return await NoopProvider().summarize_company_report(report)
+        fallback = await NoopProvider().summarize_company_report(report)
+        fallback.fallback = True
+        return fallback
 
 
 def _fact_checked(report: SynthesizedCompanyReport, source_text: str) -> SynthesizedCompanyReport:
