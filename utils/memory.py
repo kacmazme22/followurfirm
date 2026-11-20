@@ -118,7 +118,11 @@ class DigestMemory:
         memory = cls(datetime.fromisoformat(last) if last else None, data.get("entries", []))
         memory.ir_seen = data.get("ir_seen", {})
         memory.ir_pages = data.get("ir_pages", {})
-        memory.reported = data.get("reported", [])
+        # Raw-fallback text recorded on 17-19 Nov (site menus, promotions)
+        # is not something the mail reported in its own words.
+        memory.reported = [
+            e for e in data.get("reported", []) if "bildirimler bildirimler" not in e.get("text", "").lower()
+        ]
         memory.calendar = data.get("calendar", [])
         logger.info("Hafıza: son gönderim %s, %d kayıt", memory.last_sent_at, len(memory.entries))
         return memory
@@ -251,6 +255,8 @@ class DigestMemory:
         for section in digest_run.market_brief:
             add("PIYASA", section.subheading, section.narrative)
         for report in digest_run.company_reports:
+            if report.fallback:
+                continue  # raw headlines, not what the mail reported in its own words
             for _, sections in report.ordered_sections():
                 for section in sections:
                     add(report.ticker, section.subheading, section.narrative)

@@ -188,6 +188,10 @@ class SynthesizedCompanyReport(BaseModel):
     company_name: str
     # One-sentence "Kısaca:" lede over the day's sections (LLM only).
     summary: str | None = None
+    # True when the LLM failed and the raw headline list was used instead:
+    # such items are not recorded as "reported" (utils/memory.py), or the
+    # next day's prompt grows with raw text and fails the same way.
+    fallback: bool = False
     sections_by_category: dict[NewsCategory, list[SynthesizedSection]] = Field(default_factory=dict)
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

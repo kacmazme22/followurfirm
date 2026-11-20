@@ -144,7 +144,10 @@ class _FakeProvider:
 @pytest.mark.parametrize("mode, kept", [("on", 0), ("shadow", 1)])
 async def test_llm_repeat_check(mode, kept):
     experiments.configure({"llm_repeat_check": mode})
-    memory = _memory({"key": "KCHOL", "date": "2026-11-11", "label": "Finansal sonuç", "text": "3. çeyrekte 12,4 mlr TL kâr"})
+    from datetime import datetime, timedelta, timezone
+
+    yesterday = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
+    memory = _memory({"key": "KCHOL", "date": yesterday, "label": "Finansal sonuç", "text": "3. çeyrekte 12,4 mlr TL kâr"})
     report = _report("KCHOL", ("Finansal sonuç", "Üçüncü çeyrek net kârı 12,4 mlr TL oldu."))
     await rules.llm_repeat_check(report, memory, _FakeProvider())
     assert len(_texts(report)) == kept
@@ -173,3 +176,34 @@ def test_notes_are_grouped_per_rule_and_company():
     for text in ("a", "b", "c"):
         experiments.note("no_headline_low_value", "AKBNK", text)
     assert [n["text"] for n in experiments.notes()] == ["a · b · c"]
+
+
+def test_already_reported_list_stays_within_its_budget():
+    """17-19 Nov: 33 earlier AKBNK items (~5k tokens) pushed every call
+    over Groq's 8000-token cap and the ticker fell back to raw headlines."""
+    from nlp.providers.groq_provider import PREVIOUSLY_REPORTED_BUDGET_CHARS, _previously_reported_lines
+
+    lines = [f"{d:02d}.11 Röportaj: " + "x" * 480 for d in range(1, 34)]
+    out = _previously_reported_lines(lines)
+    listed = [l for l in out if l.startswith("- ")]
+    assert sum(len(l) - 2 for l in listed) <= PREVIOUSLY_REPORTED_BUDGET_CHARS
+    assert listed[-1].startswith("- 33.11")  # newest kept, oldest dropped
+
+
+def test_raw_fallback_is_not_recorded_as_reported():
+    from scrapers.models import DigestRun
+
+    report = _report("AKBNK", ("Promosyon", "Akbank emekli promosyonu 35 bin TL"))
+    report.fallback = True
+    run = DigestRun(company_reports=[report])
+    memory = DigestMemory()
+    memory._record_texts(run, "2026-11-19")
+    assert memory.reported == []
+
+
+def test_site_menu_is_not_article_text():
+    from utils.article_fetcher import structured_text
+
+    html = "<html><body><div class='news-detail'><p>Bildirimler Bildirimler BIST 100 Dolar Euro Altın Petrol Tahvil BIST 100 Dolar Euro Altın Petrol Tahvil Bigpara Bigpara AKBNK</p></div></body></html>"
+    text = structured_text(html, "https://bigpara.hurriyet.com.tr/haberler/x")
+    assert not text or "bildirimler bildirimler" not in text.lower()

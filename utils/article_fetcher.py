@@ -212,7 +212,10 @@ def structured_text(html: str, url: str) -> str | None:
         logger.info("trafilatura extraction failed for %s: %s", url, exc)
         extracted = ""
     form = extract_form_lines(html)
-    blocks = extract_text_blocks(html)
+    # Bigpara's news pages matched the form path with their menu as the only
+    # "block" ("Bildirimler Bildirimler BIST 100 Dolar Euro ..."), which then
+    # went out as the item's text on 17-19 Nov: chrome is dropped here too.
+    blocks = [b for b in extract_text_blocks(html) if not any(m in b.lower() for m in _CHROME_MARKERS)]
     if blocks or sum(1 for line in form if not line.startswith("[")) >= 3:
         logger.info("Form yapısı: %s -> %d satır, %d açıklama", url, len(form), len(blocks))
         explanations = blocks or _longest_paragraphs(extracted)
